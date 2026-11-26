@@ -78,16 +78,21 @@ describe('RED TEAM vector 4: ?api= hijacking', () => {
     expect(isTrustedOverrideHost('metadata.google.internal')).toBe(false);
   });
 
-  it('still honours the legitimate tunnel / localhost overrides', () => {
-    expect(sanitizeOverrideApiBaseUrl('https://ok-tunnel.trycloudflare.com')).toBe(
-      'https://ok-tunnel.trycloudflare.com',
+  it('rejects every Cloudflare Quick Tunnel override and honours localhost only in dev mode', () => {
+    // Production builds never accept an override: a phishing link could point at
+    // the attacker's own free Quick Tunnel.
+    expect(sanitizeOverrideApiBaseUrl('https://ok-tunnel.trycloudflare.com', { production: true })).toBeNull();
+    expect(sanitizeOverrideApiBaseUrl('https://trycloudflare.com', { production: true })).toBeNull();
+    expect(sanitizeOverrideApiBaseUrl('http://localhost:4000', { production: true })).toBeNull();
+
+    // Dev builds accept only the local backend.
+    expect(sanitizeOverrideApiBaseUrl('https://ok-tunnel.trycloudflare.com', { production: false })).toBeNull();
+    expect(sanitizeOverrideApiBaseUrl('http://localhost:4000', { production: false })).toBe('http://localhost:4000');
+    expect(sanitizeOverrideApiBaseUrl('http://127.0.0.1:4000/', { production: false })).toBe('http://127.0.0.1:4000');
+    expect(parseStartParamApiBaseUrl('api%3Dhttp%3A%2F%2Flocalhost%3A4000', { production: false })).toBe(
+      'http://localhost:4000',
     );
-    expect(sanitizeOverrideApiBaseUrl('https://trycloudflare.com')).toBe('https://trycloudflare.com');
-    expect(sanitizeOverrideApiBaseUrl('http://localhost:4000')).toBe('http://localhost:4000');
-    expect(sanitizeOverrideApiBaseUrl('http://127.0.0.1:4000/')).toBe('http://127.0.0.1:4000');
-    expect(parseStartParamApiBaseUrl('api%3Dhttps%3A%2F%2Fok-tunnel.trycloudflare.com')).toBe(
-      'https://ok-tunnel.trycloudflare.com',
-    );
+    expect(parseStartParamApiBaseUrl('api%3Dhttps%3A%2F%2Fok-tunnel.trycloudflare.com', { production: false })).toBeNull();
   });
 
   it('rejects every hostile ?api= / tgWebAppStartParam end-to-end', async () => {
@@ -192,17 +197,31 @@ describe('RED TEAM vector 4: poisoned storage / Telegram start_param', () => {
     vi.unstubAllGlobals();
   });
 
-  it('accepts a legitimate tunnel start_param but only in sessionStorage', async () => {
+  it('accepts a legitimate localhost start_param but only in sessionStorage', async () => {
     vi.resetModules();
     const stub = stubBrowser({
-      href: 'https://fro4a.github.io/FRO4A/?tgWebAppStartParam=api%3Dhttps%3A%2F%2Fok-tunnel.trycloudflare.com',
+      href: 'https://fro4a.github.io/FRO4A/?tgWebAppStartParam=api%3Dhttp%3A%2F%2Flocalhost%3A4000',
       startParam: null,
     });
     const module = await import('../lib/runtimeConfig');
     const resolved = await module.initializeRuntimeConfig();
-    expect(resolved).toBe('https://ok-tunnel.trycloudflare.com');
-    expect(stub.session.get(API_BASE_STORAGE_KEY)).toBe('https://ok-tunnel.trycloudflare.com');
+    expect(resolved).toBe('http://localhost:4000');
+    expect(stub.session.get(API_BASE_STORAGE_KEY)).toBe('http://localhost:4000');
     expect(stub.local.has(API_BASE_STORAGE_KEY)).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it('never accepts a trycloudflare tunnel start_param', async () => {
+    vi.resetModules();
+    const stub = stubBrowser({
+      href: 'https://fro4a.github.io/FRO4A/?tgWebAppStartParam=api%3Dhttps%3A%2F%2Fattacker.trycloudflare.com',
+      startParam: null,
+    });
+    const module = await import('../lib/runtimeConfig');
+    const resolved = await module.initializeRuntimeConfig();
+    expect(resolved).not.toContain('attacker');
+    expect(resolved).not.toContain('trycloudflare');
+    expect(stub.session.size).toBe(0);
     vi.unstubAllGlobals();
   });
 });

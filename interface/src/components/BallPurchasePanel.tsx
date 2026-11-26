@@ -36,6 +36,7 @@ import {
   type BallBasketItem,
 } from '../services/ballBasket';
 import { V4_LIMITS } from '../services/opcodes';
+import { BLOCKED_TRANSACTION_MESSAGE, DrawAddressSecurityError } from '../services/drawTrust';
 import {
   chunkMessages,
   maxMessagesForWallet,
@@ -109,6 +110,7 @@ export function BallPurchasePanel({
   const [notice, setNotice] = useState<Notice>(null);
   const [takenOverride, setTakenOverride] = useState<Set<string>>(new Set());
   const [guarding, setGuarding] = useState(false);
+  const [blocked, setBlocked] = useState(false);
 
   const takenPacked = useMemo(
     () =>
@@ -260,6 +262,7 @@ export function BallPurchasePanel({
     setStatus('sending');
     setNotice(null);
     setProgress(null);
+    setBlocked(false);
     setGuarding(true);
     try {
       // Last-second race guard: one fast server refresh (<50ms), never TonAPI.
@@ -289,8 +292,11 @@ export function BallPurchasePanel({
           payload: buildBallBatchMessages(chunk)[0],
         });
       }
-      await sendBatchedTransactions(tonConnectUI, chunkMessages(contractMessages, maxMessages), (value) =>
-        setProgress(value),
+      await sendBatchedTransactions(
+        tonConnectUI,
+        chunkMessages(contractMessages, maxMessages),
+        (value) => setProgress(value),
+        { gameType: 'BALL', roundId: draw.roundId, drawAddress: draw.drawAddress },
       );
 
       setStatus('success');
@@ -301,9 +307,10 @@ export function BallPurchasePanel({
       window.setTimeout(onRefresh, 6000);
       window.setTimeout(onRefresh, 16_000);
       window.setTimeout(() => setStatus('idle'), 14_000);
-    } catch {
+    } catch (error) {
       setStatus('error');
       setProgress(null);
+      setBlocked(error instanceof DrawAddressSecurityError);
     } finally {
       setGuarding(false);
     }
@@ -571,7 +578,11 @@ export function BallPurchasePanel({
         {wallet ? (
           <div className="text-center text-xs sm:text-right">
             {status === 'success' ? <span className="text-[var(--success)]">{t('tickets.pendingNote')}</span> : null}
-            {status === 'error' ? <span className="text-[var(--danger)]">{t('errors.rejected')}</span> : null}
+            {status === 'error' ? (
+              <span className="text-[var(--danger)]">
+                {blocked ? BLOCKED_TRANSACTION_MESSAGE : t('errors.rejected')}
+              </span>
+            ) : null}
             {status === 'idle' && progress === null && ticketCount > 0 && !canBuy ? (
               <span className="text-[var(--danger)]">{t('purchase.availabilityTaken')}</span>
             ) : null}

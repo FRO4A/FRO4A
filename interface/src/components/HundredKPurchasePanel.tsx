@@ -9,6 +9,7 @@ import { calculateCost, formatInteger, formatTonFromNano } from '../utils/format
 import { isSalesOpen } from '../utils/status';
 import { buildHundredKPackMessage } from '../services/messages';
 import { hundredKPackValue, remainingQuota } from '../services/ballBasket';
+import { BLOCKED_TRANSACTION_MESSAGE, DrawAddressSecurityError } from '../services/drawTrust';
 import { sendTransaction } from '../services/tonConnect';
 import { ProgressBar } from './ui/ProgressBar';
 import { cn } from '../utils/cn';
@@ -32,6 +33,7 @@ export function HundredKPurchasePanel({
   const [tonConnectUI] = useTonConnectUI();
   const [quantity, setQuantity] = useState(1);
   const [status, setStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+  const [blocked, setBlocked] = useState(false);
 
   const cost = calculateCost(draw.ticketBody?.nanotons, draw.companyFee?.nanotons, 0n);
   const hardCap = draw.hardCap ?? PROTOCOL_LIMITS.HARD_CAP_100K;
@@ -80,22 +82,29 @@ export function HundredKPurchasePanel({
     }
     if (!canBuy || attachValue === null) return;
     setStatus('sending');
+    setBlocked(false);
     try {
       // ONE single `BuyTicketBatch (0x1011)` message -> ONE Ticket100kPack.
-      await sendTransaction(tonConnectUI, [
-        {
-          address: draw.drawAddress,
-          amount: attachValue,
-          payload: buildHundredKPackMessage(quantity),
-        },
-      ]);
+      // The target draw is verified against the immutable factory first.
+      await sendTransaction(
+        tonConnectUI,
+        [
+          {
+            address: draw.drawAddress,
+            amount: attachValue,
+            payload: buildHundredKPackMessage(quantity),
+          },
+        ],
+        { gameType: '100K', roundId: draw.roundId, drawAddress: draw.drawAddress },
+      );
       setStatus('success');
       window.setTimeout(onPurchased, 1500);
       window.setTimeout(onRefresh, 6000);
       window.setTimeout(onRefresh, 16_000);
       window.setTimeout(() => setStatus('idle'), 14_000);
-    } catch {
+    } catch (error) {
       setStatus('error');
+      setBlocked(error instanceof DrawAddressSecurityError);
     }
   };
 
@@ -293,7 +302,11 @@ export function HundredKPurchasePanel({
         {wallet ? (
           <div className="text-center text-xs sm:text-right">
             {status === 'success' ? <span className="text-[var(--success)]">{t('tickets.pendingNote')}</span> : null}
-            {status === 'error' ? <span className="text-[var(--danger)]">{t('errors.rejected')}</span> : null}
+            {status === 'error' ? (
+              <span className="text-[var(--danger)]">
+                {blocked ? BLOCKED_TRANSACTION_MESSAGE : t('errors.rejected')}
+              </span>
+            ) : null}
             {status === 'idle' && maxBuyable <= 0 ? (
               <span className="text-[var(--danger)]">
                 {quotaExhausted ? t('hundredK.quotaExhausted') : t('hundredK.capReached')}

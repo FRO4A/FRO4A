@@ -20,7 +20,9 @@ import {
   buildRetryRollover,
 } from '../services/messages';
 import { sendTransaction } from '../services/tonConnect';
+import { BLOCKED_TRANSACTION_MESSAGE, DrawAddressSecurityError } from '../services/drawTrust';
 import { parseTonToNano } from '../utils/format';
+import { sameAddress } from '../utils/address';
 import { Modal } from './ui/Modal';
 
 type ActionKey =
@@ -60,6 +62,7 @@ export function AdminPanel({
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<'success' | 'error' | null>(null);
+  const [blocked, setBlocked] = useState(false);
   const [sweepTon, setSweepTon] = useState(draw.companyFeeAccrued.ton);
 
   useEffect(() => {
@@ -160,16 +163,26 @@ export function AdminPanel({
   const confirm = async (): Promise<void> => {
     if (!pending) return;
     setSending(true);
+    setBlocked(false);
     try {
-      await sendTransaction(tonConnectUI, [
-        { address: pending.target, amount: pending.amount.toString(), payload: pending.body },
-      ]);
+      // Every action that targets the draw contract is verified against the
+      // immutable factory before the wallet prompt. `createRound` targets the
+      // factory itself (no drawAddress), so it is not guarded here.
+      const drawTarget = sameAddress(pending.target, draw.drawAddress)
+        ? { gameType, roundId: draw.roundId, drawAddress: draw.drawAddress }
+        : undefined;
+      await sendTransaction(
+        tonConnectUI,
+        [{ address: pending.target, amount: pending.amount.toString(), payload: pending.body }],
+        drawTarget,
+      );
       setResult('success');
       setPending(null);
       nextRound.refresh();
       window.setTimeout(onDone, 5000);
-    } catch {
+    } catch (error) {
       setResult('error');
+      setBlocked(error instanceof DrawAddressSecurityError);
     } finally {
       setSending(false);
     }
@@ -306,7 +319,11 @@ export function AdminPanel({
 
       {result !== null ? (
         <div className="glass-tile mt-3 px-3 py-2 text-sm text-[var(--text-primary)]" role="status">
-          {result === 'success' ? t('admin.success') : t('admin.error')}
+          {result === 'success'
+            ? t('admin.success')
+            : blocked
+              ? BLOCKED_TRANSACTION_MESSAGE
+              : t('admin.error')}
         </div>
       ) : null}
 

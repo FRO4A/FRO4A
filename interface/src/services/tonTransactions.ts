@@ -1,4 +1,9 @@
-import { sendTransaction, type TransactionMessage, type TransactionSender } from './tonConnect';
+import {
+  sendTransaction,
+  type GuardedDrawTarget,
+  type TransactionMessage,
+  type TransactionSender,
+} from './tonConnect';
 
 /**
  * Multi-message TON Connect batching.
@@ -78,11 +83,15 @@ export interface BatchProgress {
 /**
  * Sends every batch sequentially. Each batch is one wallet confirmation; the next
  * one is only requested after the previous signature succeeded.
+ *
+ * When `drawTarget` is supplied, the canonical on-chain draw address is verified
+ * before the first prompt (and served from cache for the remaining batches).
  */
 export async function sendBatchedTransactions(
   sender: TransactionSender,
   batches: readonly MessageBatch<TransactionMessage>[],
   onProgress?: (progress: BatchProgress) => void,
+  drawTarget?: GuardedDrawTarget,
 ): Promise<string[]> {
   if (batches.length === 0) throw new Error('No messages to send');
   const ticketsTotal = batches.reduce((sum, batch) => sum + batch.items.length, 0);
@@ -96,7 +105,7 @@ export async function sendBatchedTransactions(
       ticketsSent: sent,
       ticketsTotal,
     });
-    const result = await sendTransaction(sender, batch.items);
+    const result = await sendTransaction(sender, batch.items, drawTarget);
     bocs.push(result.boc);
     sent += batch.items.length;
   }

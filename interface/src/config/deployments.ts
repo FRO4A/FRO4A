@@ -61,11 +61,11 @@ export const ACTIVE_DEPLOYMENTS: Deployments = TESTNET_DEPLOYMENTS;
 /**
  * Empty (`VITE_API_BASE_URL=`) or `/` means same-origin relative requests.
  *
- * In the hybrid deployment this constant is only the LAST fallback: the active
- * backend URL is resolved at runtime (`?api=` > Telegram start param >
- * published `runtime-config.json` > storage > this value) by
- * `src/lib/runtimeConfig.ts`, so a new Cloudflare tunnel never requires a
- * frontend rebuild.
+ * In the hybrid deployment this constant is only the LAST fallback: production
+ * builds resolve the backend strictly from the repository-controlled
+ * `runtime-config.json` (an attacker-supplied `?api=` / Telegram start_param is
+ * never honoured), while local dev additionally accepts a localhost override.
+ * See `src/lib/runtimeConfig.ts`.
  */
 const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').trim();
 export const API_BASE_URL = configuredApiBaseUrl === '/' ? '' : configuredApiBaseUrl.replace(/\/+$/, '');

@@ -5,6 +5,7 @@ import type { TicketView } from '../types/game';
 import { useI18n } from '../i18n';
 import { useWalletTickets } from '../hooks/useWalletTickets';
 import { buildClaim, buildPackAction, buildRefund } from '../services/messages';
+import { BLOCKED_TRANSACTION_MESSAGE, DrawAddressSecurityError } from '../services/drawTrust';
 import { sendTransaction } from '../services/tonConnect';
 import { GAS } from '../services/opcodes';
 import { isActiveTicketView, isPastTicketView } from '../utils/ticket';
@@ -53,18 +54,26 @@ export function MyTicketsPage(): JSX.Element {
         ? buildClaim(ticket.gameType)
         : buildRefund(ticket.gameType);
     try {
-      await sendTransaction(tonConnectUI, [
-        {
-          address: ticket.ticketAddress,
-          amount: amount.toString(),
-          payload,
-        },
-      ]);
+      // The ticket's draw contract is verified against the immutable factory
+      // BEFORE the claim/refund prompt: a spoofed API drawAddress is blocked.
+      await sendTransaction(
+        tonConnectUI,
+        [
+          {
+            address: ticket.ticketAddress,
+            amount: amount.toString(),
+            payload,
+          },
+        ],
+        { gameType: ticket.gameType, roundId: ticket.roundId, drawAddress: ticket.drawAddress },
+      );
       window.setTimeout(tickets.refresh, 6000);
       window.setTimeout(tickets.refresh, 15000);
       window.setTimeout(() => setPendingAction(null), 6000);
-    } catch {
-      setActionError(t('errors.rejected'));
+    } catch (error) {
+      setActionError(
+        error instanceof DrawAddressSecurityError ? BLOCKED_TRANSACTION_MESSAGE : t('errors.rejected'),
+      );
       setPendingAction(null);
     }
   };

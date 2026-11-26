@@ -5,6 +5,7 @@ import type { CurrentDrawView } from '../types/api';
 import type { GameType } from '../types/game';
 import { useI18n, type Translate } from '../i18n';
 import { buildForceStartGame } from '../services/messages';
+import { BLOCKED_TRANSACTION_MESSAGE, DrawAddressSecurityError } from '../services/drawTrust';
 import { sendTransaction } from '../services/tonConnect';
 import { GAS } from '../services/opcodes';
 import { cn } from '../utils/cn';
@@ -37,24 +38,31 @@ export function AdminForceStartCard({
   const { t } = useI18n();
   const [tonConnectUI] = useTonConnectUI();
   const [status, setStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+  const [blocked, setBlocked] = useState(false);
   const closed = draw.status >= 2;
   const disabled = closed || status === 'sending';
 
   const forceStart = async (): Promise<void> => {
     if (disabled) return;
     setStatus('sending');
+    setBlocked(false);
     try {
-      await sendTransaction(tonConnectUI, [
-        {
-          address: draw.drawAddress,
-          amount: GAS.ADMIN_ACTION.toString(),
-          payload: buildForceStartGame(gameType),
-        },
-      ]);
+      await sendTransaction(
+        tonConnectUI,
+        [
+          {
+            address: draw.drawAddress,
+            amount: GAS.ADMIN_ACTION.toString(),
+            payload: buildForceStartGame(gameType),
+          },
+        ],
+        { gameType, roundId: draw.roundId, drawAddress: draw.drawAddress },
+      );
       setStatus('success');
       window.setTimeout(onDone, 5_000);
-    } catch {
+    } catch (error) {
       setStatus('error');
+      setBlocked(error instanceof DrawAddressSecurityError);
     }
   };
 
@@ -95,7 +103,7 @@ export function AdminForceStartCard({
       ) : null}
       {status === 'error' ? (
         <p className="mt-2 text-xs text-[var(--danger)]" role="alert">
-          {t('admin.error')}
+          {blocked ? BLOCKED_TRANSACTION_MESSAGE : t('admin.error')}
         </p>
       ) : null}
     </section>

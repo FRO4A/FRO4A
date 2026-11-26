@@ -1,28 +1,35 @@
 /**
  * Runtime backend URL resolution — zero-rebuild Cloudflare Quick Tunnel switching.
  *
- * PRIVACY: no cookies, no accounts, no analytics. The only persisted value is a
- * non-identifying API hostname kept under `fro4a_api_base`.
+ * PRIVACY: no cookies, no accounts, no analytics. The only persisted values are
+ * non-identifying API hostnames kept under `fro4a_api_base` (dev override) and
+ * `fro4a_api_canonical` (repository-resolved endpoint).
  *
- * SECURITY (anti-hijack): the `?api=` / Telegram start-param overrides are
- * UNTRUSTED input. They are only honoured when the hostname is a Cloudflare
- * Quick Tunnel (`*.trycloudflare.com`) or the local dev backend
- * (`localhost` / `127.0.0.1`), and they are persisted to `sessionStorage`
- * ONLY — never to `localStorage`. A shared phishing link such as
- * `https://fro4a.github.io/FRO4A/?api=https://evil-attacker.com` is therefore
- * rejected outright and can never survive a new browser session.
+ * SECURITY (anti-phishing, production builds):
+ *   - `?api=` and Telegram `start_param` are UNTRUSTED input. A production
+ *     build NEVER honours them: anybody can spin up a free Quick Tunnel such as
+ *     `https://attacker.trycloudflare.com` and share
+ *     `https://fro4a.github.io/FRO4A/?api=https://attacker.trycloudflare.com`,
+ *     which would serve a spoofed `drawAddress`. Only a local Vite dev build
+ *     (`import.meta.env.PROD === false`) may honour an override, and then only
+ *     for `localhost` / `127.0.0.1`.
+ *   - The production endpoint is resolved strictly from the canonical,
+ *     repository-controlled runtime config
+ *     (`raw.githubusercontent.com/FRO4A/FRO4A/main/interface/public/
+ *     runtime-config.json`, then `./runtime-config.json`). The published
+ *     `apiBaseUrl` must be a clean `https://*.trycloudflare.com` host (or an
+ *     explicitly configured production domain) without credentials, backslashes,
+ *     query strings or fragments.
  *
- * Priority:
- *   1. `?api=<url>` query parameter — explicit operator override, validated
- *      against the tunnel/local host allow-list and kept in `sessionStorage`.
- *   2. Telegram `initDataUnsafe.start_param` / `?tgWebAppStartParam=` — lets a
- *      BotFather Mini App link carry the live tunnel (same allow-list,
- *      `sessionStorage` scope).
- *   3. Published runtime config — `raw.githubusercontent.com/FRO4A/FRO4A/main/
- *      interface/public/runtime-config.json` first (updated by the tunnel
- *      script minutes after a restart), then `./runtime-config.json`. This is
- *      the canonical, repository-controlled source.
- *   4. Stored value (`sessionStorage`, then a host-checked `localStorage`).
+ * Priority (production):
+ *   1. Published runtime config (raw GitHub mirror, then same-origin copy).
+ *   2. `import.meta.env.VITE_API_BASE_URL` / build-time `API_BASE_URL`.
+ *
+ * Priority (non-production dev):
+ *   1. `?api=<localhost>` query parameter (sessionStorage only).
+ *   2. Telegram `initDataUnsafe.start_param` holding a localhost URL.
+ *   3. Published runtime config (trusted hosts only).
+ *   4. Stored canonical endpoint, then a stored dev override.
  *   5. `import.meta.env.VITE_API_BASE_URL`.
  *
  * An empty result means "same-origin relative requests" (`/api/...`).
@@ -39,17 +46,40 @@ export const RUNTIME_CONFIG_TIMEOUT_MS = 2000;
 /** Telegram Web/desktop forwards `?startapp=<value>` as these query keys. */
 export const START_PARAM_QUERY_KEYS: readonly string[] = ['tgWebAppStartParam', 'start_param'];
 
-/** The only suffix accepted for tunnel overrides (exact or `*.` subdomain). */
+/** The suffix accepted for the REPOSITORY-CONTROLLED runtime config (`*.` subdomain only). */
 export const TRUSTED_TUNNEL_DOMAIN = 'trycloudflare.com';
 
 /** Local development hosts (HTTP is tolerated for these two only). */
 export const TRUSTED_LOCAL_HOSTS: readonly string[] = ['localhost', '127.0.0.1'];
+
+/** Repository-resolved endpoint (runtime config): separate from dev overrides. */
+export const API_CANONICAL_STORAGE_KEY = 'fro4a_api_canonical';
+
+/** Explicit mode override used by unit tests; defaults to the Vite build flag. */
+export interface OverrideOptions {
+  /** `true` = production build: `.trycloudflare.com` / start-param overrides are ignored. */
+  production?: boolean;
+}
 
 let activeApiBaseUrl: string | null = null;
 let initialization: Promise<string> | null = null;
 
 function hasWindow(): boolean {
   return typeof window !== 'undefined';
+}
+
+function normalizeHost(hostname: string): string {
+  return hostname
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '');
+}
+
+/** True when this build is a production bundle (overrides are never honoured). */
+export function isProductionBuild(options: OverrideOptions = {}): boolean {
+  if (typeof options.production === 'boolean') return options.production;
+  return import.meta.env.PROD === true;
 }
 
 
@@ -88,66 +118,134 @@ export function sanitizeApiBaseUrl(raw: string | null | undefined): string | nul
 }
 
 /**
- * True for `*.trycloudflare.com` (or the bare domain) and the local dev hosts.
+ * True for a genuine Cloudflare Quick Tunnel host (`<random>.trycloudflare.com`).
  *
- * Deliberately strict: `trycloudflare.com.evil.example`,
- * `evil-trycloudflare.com`, `fro4a.github.io` and every other third-party
- * domain are rejected, so a shared `?api=` phishing link cannot redirect API
- * traffic to an attacker.
+ * The bare apex domain is NOT a tunnel: `https://trycloudflare.com` is a
+ * marketing site, never an API endpoint. `trycloudflare.com.evil.example` and
+ * `evil-trycloudflare.com` are rejected by the exact suffix check.
  */
-export function isTrustedOverrideHost(hostname: string): boolean {
-  const host = hostname
-    .trim()
-    .toLowerCase()
-    .replace(/^\[|\]$/g, '')
-    .replace(/\.$/, '');
-  if (host.length === 0) return false;
-  if (TRUSTED_LOCAL_HOSTS.includes(host)) return true;
-  return host === TRUSTED_TUNNEL_DOMAIN || host.endsWith(`.${TRUSTED_TUNNEL_DOMAIN}`);
+export function isTrustedTunnelHost(hostname: string): boolean {
+  const host = normalizeHost(hostname);
+  const suffix = `.${TRUSTED_TUNNEL_DOMAIN}`;
+  return host.length > suffix.length && host.endsWith(suffix);
 }
 
 /**
- * Sanitizes an UNTRUSTED override (`?api=`, Telegram start param): structural
- * URL validation first, then the tunnel/local host allow-list. Anything else
- * returns `null` and is never stored or used.
+ * Hosts an operator explicitly configured as the production API
+ * (`VITE_API_BASE_URL` / `API_BASE_URL`). Everything else is rejected.
  */
-export function sanitizeOverrideApiBaseUrl(raw: string | null | undefined): string | null {
+function configuredProductionHosts(): string[] {
+  const hosts = new Set<string>();
+  for (const candidate of [import.meta.env.VITE_API_BASE_URL, API_BASE_URL]) {
+    const value = sanitizeApiBaseUrl(candidate);
+    if (value === null || value.length === 0) continue;
+    try {
+      hosts.add(normalizeHost(new URL(value).hostname));
+    } catch {
+      // Ignore malformed build-time values.
+    }
+  }
+  return [...hosts];
+}
+
+/**
+ * Host allow-list for the CANONICAL runtime config (`apiBaseUrl` published in
+ * the FRO4A repository): `https://*.trycloudflare.com` or an explicitly
+ * configured production domain. The repository controls this value, so a
+ * Quick Tunnel hostname is legitimate here — unlike an attacker-supplied
+ * `?api=` parameter.
+ */
+export function isTrustedRuntimeConfigHost(hostname: string): boolean {
+  const host = normalizeHost(hostname);
+  if (host.length === 0) return false;
+  if (isTrustedTunnelHost(host)) return true;
+  return configuredProductionHosts().includes(host);
+}
+
+/**
+ * Validate one repository-controlled runtime-config endpoint.
+ *
+ * Requires `https://` (no local HTTP in production), a trusted host, and no
+ * credentials / query / fragment / backslashes (rejected by
+ * `sanitizeApiBaseUrl` before parsing).
+ */
+export function sanitizeRuntimeApiBaseUrl(raw: string | null | undefined): string | null {
   const value = sanitizeApiBaseUrl(raw);
-  if (value === null || value.length === 0) return value;
+  if (value === null || value.length === 0) return null;
+  if (!value.toLowerCase().startsWith('https://')) return null;
   try {
-    return isTrustedOverrideHost(new URL(value).hostname) ? value : null;
+    return isTrustedRuntimeConfigHost(new URL(value).hostname) ? value : null;
   } catch {
     return null;
   }
 }
 
-/** Write (or clear) the endpoint in one storage area; failures are ignored. */
+/**
+ * True only for a local dev backend (`localhost` / `127.0.0.1`).
+ *
+ * Production builds return `false` for every hostname: an arbitrary
+ * `*.trycloudflare.com` tunnel is exactly how a phishing link would serve a
+ * spoofed `drawAddress`, so overrides must never be honoured there.
+ */
+export function isTrustedOverrideHost(hostname: string, options: OverrideOptions = {}): boolean {
+  if (isProductionBuild(options)) return false;
+  return TRUSTED_LOCAL_HOSTS.includes(normalizeHost(hostname));
+}
+
+/**
+ * Sanitizes an UNTRUSTED override (`?api=`, Telegram start param):
+ * structural URL validation first, then the DEV-only localhost allow-list.
+ * Anything else returns `null` and is never stored or used.
+ */
+export function sanitizeOverrideApiBaseUrl(
+  raw: string | null | undefined,
+  options: OverrideOptions = {},
+): string | null {
+  const value = sanitizeApiBaseUrl(raw);
+  if (value === null) return null;
+  // `''` / `/` is an explicit same-origin choice, not a redirect.
+  if (value.length === 0) return '';
+  if (isProductionBuild(options)) return null;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:') return null;
+    return TRUSTED_LOCAL_HOSTS.includes(normalizeHost(parsed.hostname)) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Write (or clear) one storage key; failures are ignored. */
 export function writeStoredApiBaseUrl(
   storage: Pick<Storage, 'setItem' | 'removeItem'> | null,
   value: string,
+  key: string = API_BASE_STORAGE_KEY,
 ): void {
   if (storage === null) return;
   try {
     if (value.length > 0) {
-      storage.setItem(API_BASE_STORAGE_KEY, value);
+      storage.setItem(key, value);
     } else {
-      storage.removeItem(API_BASE_STORAGE_KEY);
+      storage.removeItem(key);
     }
   } catch {
     // Storage may be unavailable (private mode / embedded webview).
   }
 }
 
-/** Canonical endpoint (published runtime config): both storage areas. */
+/**
+ * Repository-resolved endpoint (published runtime config): both storage areas,
+ * under the dedicated canonical key so a legacy `?api=` value can never be
+ * mistaken for a verified endpoint.
+ */
 function rememberApiBaseUrl(value: string): void {
-  writeStoredApiBaseUrl(safeSessionStorage(), value);
-  writeStoredApiBaseUrl(safeLocalStorage(), value);
+  writeStoredApiBaseUrl(safeSessionStorage(), value, API_CANONICAL_STORAGE_KEY);
+  writeStoredApiBaseUrl(safeLocalStorage(), value, API_CANONICAL_STORAGE_KEY);
 }
 
 /**
- * UNTRUSTED `?api=` / start-param override: `sessionStorage` ONLY.
- * It is never written to `localStorage`, so a phishing link cannot survive the
- * tab session; the next visit resolves the canonical runtime config again.
+ * UNTRUSTED dev `?api=` / start-param override: `sessionStorage` ONLY (and only
+ * a localhost URL reaches this function in a non-production build).
  */
 export function rememberOverrideApiBaseUrl(
   value: string,
@@ -175,25 +273,41 @@ function safeLocalStorage(): Storage | null {
   }
 }
 
-function readStorageApiBaseUrl(
-  storage: Storage | null,
-  trustedHostOnly: boolean,
-): string | null {
+/** Read the canonical key, purging a value that is not a trusted endpoint. */
+function readCanonicalStorage(storage: Storage | null): string | null {
+  if (storage === null) return null;
+  try {
+    const stored = storage.getItem(API_CANONICAL_STORAGE_KEY);
+    if (stored === null) return null;
+    const value = sanitizeRuntimeApiBaseUrl(stored) ?? (isProductionBuild() ? null : sanitizeOverrideApiBaseUrl(stored));
+    if (value === null || value.length === 0) {
+      try {
+        storage.removeItem(API_CANONICAL_STORAGE_KEY);
+      } catch {
+        // Ignore storage failures.
+      }
+      return null;
+    }
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+/** Dev-only override key (`sessionStorage`, then localhost-validated localStorage). */
+function readOverrideStorage(storage: Storage | null): string | null {
   if (storage === null) return null;
   try {
     const stored = storage.getItem(API_BASE_STORAGE_KEY);
-    const value = trustedHostOnly
-      ? sanitizeOverrideApiBaseUrl(stored)
-      : sanitizeApiBaseUrl(stored);
+    if (stored === null) return null;
+    const value = sanitizeOverrideApiBaseUrl(stored);
     if (value === null || value.length === 0) {
-      // Purge legacy/hijacked values (e.g. an old `?api=` override persisted to
-      // localStorage before overrides became session-scoped).
-      if (stored !== null && trustedHostOnly) {
-        try {
-          storage.removeItem(API_BASE_STORAGE_KEY);
-        } catch {
-          // Ignore storage failures.
-        }
+      // Purge legacy/hijacked values (e.g. an old tunnel persisted before the
+      // production override lock-down).
+      try {
+        storage.removeItem(API_BASE_STORAGE_KEY);
+      } catch {
+        // Ignore storage failures.
       }
       return null;
     }
@@ -204,15 +318,28 @@ function readStorageApiBaseUrl(
 }
 
 /**
- * Stored fallback: `sessionStorage` first (may hold a host-validated override
- * or a canonical tunnel), then `localStorage` — which is only trusted when its
- * host passes the tunnel/local allow-list.
+ * Dev-mode stored fallback: canonical endpoint first (repository-resolved),
+ * then a localhost-only override. Production builds never read storage at all.
  */
 function readStoredApiBaseUrl(): string | null {
   return (
-    readStorageApiBaseUrl(safeSessionStorage(), false) ??
-    readStorageApiBaseUrl(safeLocalStorage(), true)
+    readCanonicalStorage(safeSessionStorage()) ??
+    readCanonicalStorage(safeLocalStorage()) ??
+    readOverrideStorage(safeSessionStorage()) ??
+    readOverrideStorage(safeLocalStorage())
   );
+}
+
+/** Production hygiene: drop any pre-lock-down override stored by an older build. */
+function purgeLegacyOverrideStorage(): void {
+  for (const storage of [safeSessionStorage(), safeLocalStorage()]) {
+    if (storage === null) continue;
+    try {
+      storage.removeItem(API_BASE_STORAGE_KEY);
+    } catch {
+      // Ignore storage failures.
+    }
+  }
 }
 
 /**
@@ -220,11 +347,16 @@ function readStoredApiBaseUrl(): string | null {
  *
  * Accepted shapes (URL-decoded first, so `?startapp=api%3Dhttps%3A%2F%2F...`
  * works as well as `?tgWebAppStartParam=https://...`):
- *   - `api=https://tunnel.trycloudflare.com`
- *   - `api_https://tunnel.trycloudflare.com`
- *   - `https://tunnel.trycloudflare.com`
+ *   - `api=http://localhost:4000`
+ *   - `api_http://localhost:4000`
+ *   - `http://127.0.0.1:4000`
+ *
+ * Production builds reject every value (`OverrideOptions.production`).
  */
-export function parseStartParamApiBaseUrl(raw: string | null | undefined): string | null {
+export function parseStartParamApiBaseUrl(
+  raw: string | null | undefined,
+  options: OverrideOptions = {},
+): string | null {
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
   if (trimmed.length === 0) return null;
@@ -246,7 +378,7 @@ export function parseStartParamApiBaseUrl(raw: string | null | undefined): strin
   if (marker >= 0) candidates.push(decoded.slice(marker + 'api='.length));
   candidates.push(decoded);
   for (const candidate of candidates) {
-    const value = sanitizeOverrideApiBaseUrl(candidate.split('&')[0]);
+    const value = sanitizeOverrideApiBaseUrl(candidate.split('&')[0], options);
     if (value !== null && value.length > 0) return value;
   }
   return null;
@@ -265,7 +397,7 @@ function readTelegramStartParam(): string | null {
 /**
  * Read the Telegram start parameter from the URL (`?tgWebAppStartParam=`,
  * `?startapp=`) or the WebApp `initDataUnsafe.start_param` bridge; returns a
- * sanitized API base URL or `null`.
+ * sanitized DEV-only localhost API base URL or `null`.
  */
 function readStartParamApiBaseUrl(): string | null {
   if (!hasWindow()) return null;
@@ -286,12 +418,11 @@ function readStartParamApiBaseUrl(): string | null {
 }
 
 /**
- * Read `?api=<tunnel>` without side effects.
+ * Read `?api=<url>` without side effects.
  *
- * Only a `*.trycloudflare.com` or localhost/127.0.0.1 host is accepted; any
- * other value is ignored, so a shared phishing link cannot hijack the API.
- * A stale trusted value is still tolerated: `initializeRuntimeConfig` keeps it
- * in `sessionStorage` for this tab only.
+ * Production builds reject every value (an attacker's own Quick Tunnel would
+ * otherwise serve a spoofed `drawAddress`). Dev builds accept only
+ * `http://localhost[:port]` / `http://127.0.0.1[:port]`.
  */
 function readQueryApiBaseUrl(): string | null {
   if (!hasWindow()) return null;
@@ -326,14 +457,30 @@ function clearQueryApiParam(): void {
   }
 }
 
+/** How strictly a runtime-config `apiBaseUrl` is validated. */
+type RuntimeConfigMode = 'strict' | 'local';
+
+function isLocalHttpApiBaseUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' && TRUSTED_LOCAL_HOSTS.includes(normalizeHost(parsed.hostname));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Fetch one runtime-config JSON file with a hard 2000 ms timeout (never blocks
- * boot). The published raw mirror must contain an absolute `https://` endpoint;
- * the same-origin copy may also point at a local HTTP dev server.
+ * boot).
+ *
+ * `strict` (production): `apiBaseUrl` must be a clean `https://*.trycloudflare.com`
+ * or an explicitly configured production domain — never credentials,
+ * backslashes, query strings or fragments.
+ * `local` (dev): additionally tolerates a `http://localhost` dev backend.
  */
 async function fetchRuntimeConfigApiBaseUrl(
   url: string,
-  requireHttps: boolean,
+  mode: RuntimeConfigMode,
 ): Promise<string | null> {
   if (!hasWindow() || typeof fetch !== 'function') return null;
   const controller = new AbortController();
@@ -348,14 +495,16 @@ async function fetchRuntimeConfigApiBaseUrl(
     });
     if (!response.ok) return null;
     const payload = (await response.json()) as { apiBaseUrl?: unknown };
-    const normalized = sanitizeApiBaseUrl(
-      typeof payload.apiBaseUrl === 'string' ? payload.apiBaseUrl : null,
-    );
+    const raw = typeof payload.apiBaseUrl === 'string' ? payload.apiBaseUrl : null;
+    const normalized = sanitizeRuntimeApiBaseUrl(raw);
     // An empty runtime-config value is not a choice: fall through to storage and
     // finally `VITE_API_BASE_URL` instead of pinning same-origin.
-    if (normalized === null || normalized.length === 0) return null;
-    if (requireHttps && !normalized.startsWith('https://')) return null;
-    return normalized;
+    if (normalized !== null && normalized.length > 0) return normalized;
+    if (mode === 'local' && raw !== null) {
+      const local = sanitizeApiBaseUrl(raw);
+      if (local !== null && local.length > 0 && isLocalHttpApiBaseUrl(local)) return local;
+    }
+    return null;
   } catch {
     return null;
   } finally {
@@ -368,12 +517,12 @@ async function fetchRuntimeConfigApiBaseUrl(
  * (refreshed by `start-hybrid-tunnel.ps1` seconds after a tunnel restart) wins
  * over the copy published with the last GitHub Pages build.
  */
-async function fetchPublishedApiBaseUrl(): Promise<string | null> {
+async function fetchPublishedApiBaseUrl(mode: RuntimeConfigMode): Promise<string | null> {
   if (!hasWindow()) return null;
   const stamp = Date.now();
   const [mirror, local] = await Promise.all([
-    fetchRuntimeConfigApiBaseUrl(`${RUNTIME_CONFIG_RAW_URL}?t=${stamp}`, true),
-    fetchRuntimeConfigApiBaseUrl(`${RUNTIME_CONFIG_FILE}?t=${stamp}`, false),
+    fetchRuntimeConfigApiBaseUrl(`${RUNTIME_CONFIG_RAW_URL}?t=${stamp}`, 'strict'),
+    fetchRuntimeConfigApiBaseUrl(`${RUNTIME_CONFIG_FILE}?t=${stamp}`, mode),
   ]);
   return mirror ?? local;
 }
@@ -398,36 +547,48 @@ export function selectApiBaseUrl(input: {
 /**
  * Resolve the active backend base URL once per page load and memoize it.
  * Safe to call from any request path; concurrent callers share one lookup.
+ *
+ * PRODUCTION: no query/start-param override and no storage is consulted. The
+ * endpoint comes only from the repository-controlled runtime config or the
+ * build-time `VITE_API_BASE_URL`.
  */
 export function initializeRuntimeConfig(): Promise<string> {
   if (activeApiBaseUrl !== null) return Promise.resolve(activeApiBaseUrl);
   if (initialization !== null) return initialization;
   initialization = (async (): Promise<string> => {
-    // 1. Explicit `?api=` override: host-allow-listed, kept in sessionStorage
-    //    only, and booted without any network round-trip.
-    const query = readQueryApiBaseUrl();
-    if (query !== null && query.length > 0) {
+    const production = isProductionBuild();
+
+    if (production) {
+      // Cosmetic only: never honour the parameter, but strip it so a phishing
+      // URL does not keep advertising an attacker tunnel in the address bar.
       clearQueryApiParam();
-      rememberOverrideApiBaseUrl(query);
-      activeApiBaseUrl = query;
-      return query;
+    } else {
+      // 1. Dev-only `?api=http://localhost:4000` override (sessionStorage only).
+      const query = readQueryApiBaseUrl();
+      if (query !== null && query.length > 0) {
+        clearQueryApiParam();
+        rememberOverrideApiBaseUrl(query);
+        activeApiBaseUrl = query;
+        return query;
+      }
+
+      // 2. Dev-only Telegram start parameter holding a localhost URL.
+      const startParam = readStartParamApiBaseUrl();
+      if (startParam !== null) {
+        rememberOverrideApiBaseUrl(startParam);
+        activeApiBaseUrl = startParam;
+        return startParam;
+      }
     }
 
-    // 2. Telegram start parameter (`?tgWebAppStartParam=`, `?startapp=` or
-    //    `initDataUnsafe.start_param`) — same host allow-list, session scope.
-    const startParam = readStartParamApiBaseUrl();
-    if (startParam !== null) {
-      rememberOverrideApiBaseUrl(startParam);
-      activeApiBaseUrl = startParam;
-      return startParam;
-    }
+    // 3. Canonical runtime config, fetched with `cache: 'no-store'` so a laptop
+    //    tunnel restart is picked up on the next Mini App launch. The mirror is
+    //    always validated in strict mode; the same-origin copy may also point at
+    //    a localhost backend in dev mode only.
+    const runtimeConfig = await fetchPublishedApiBaseUrl(production ? 'strict' : 'local');
 
-    // 3. Published runtime config, fetched with `cache: 'no-store'` so a laptop
-    //    tunnel restart is picked up on the next Mini App launch.
-    const runtimeConfig = await fetchPublishedApiBaseUrl();
-
-    // 4. Stored value, then the build-time fallback.
-    const stored = readStoredApiBaseUrl();
+    // 4. Dev storage fallback, then the build-time fallback.
+    const stored = production ? null : readStoredApiBaseUrl();
     const resolved = selectApiBaseUrl({
       query: null,
       startParam: null,
@@ -435,7 +596,8 @@ export function initializeRuntimeConfig(): Promise<string> {
       stored,
       fallback: sanitizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL) ?? API_BASE_URL,
     });
-    if (runtimeConfig !== null) rememberApiBaseUrl(resolved);
+    if (!production && runtimeConfig !== null) rememberApiBaseUrl(resolved);
+    if (production) purgeLegacyOverrideStorage();
     activeApiBaseUrl = resolved;
     return activeApiBaseUrl;
   })();

@@ -52,8 +52,10 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
  * 4xx responses are authoritative and are never retried.
  */
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
-  // Resolved once per page load: `?api=` > sessionStorage > runtime-config.json
-  // > VITE_API_BASE_URL. Empty = same-origin `/api/...`.
+  // Resolved once per page load. Production: runtime-config.json only (no
+  // `?api=` / start-param / storage overrides — phishing lock-down).
+  // Dev: localhost `?api=` override > runtime-config.json > storage >
+  // VITE_API_BASE_URL. Empty = same-origin `/api/...`.
   const apiBaseUrl = await initializeRuntimeConfig();
   let lastError: unknown = null;
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
