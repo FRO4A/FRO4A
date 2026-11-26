@@ -7,6 +7,7 @@ import { formatInteger, formatTon, formatDateTime } from '../utils/format';
 import { BallSet } from './ui/Ball';
 import { DrawStatusBadge } from './ui/StatusBadge';
 import { tonviewerAddressUrl } from '../config/deployments';
+import { safeExternalUrl } from '../utils/externalUrl';
 import { cn } from '../utils/cn';
 
 export function ArchiveTable({
@@ -97,7 +98,7 @@ export function ArchiveTable({
                     </button>
                   ) : null}
                   <a
-                    href={item.tonviewerUrl ?? tonviewerAddressUrl(item.drawAddress)}
+                    href={safeExternalUrl(item.tonviewerUrl, tonviewerAddressUrl(item.drawAddress))}
                     target="_blank"
                     rel="noreferrer noopener"
                     className="icon-btn h-8 w-8"

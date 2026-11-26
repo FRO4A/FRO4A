@@ -65,6 +65,11 @@ export function sanitizeApiBaseUrl(raw: string | null | undefined): string | nul
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
   if (trimmed.length === 0 || trimmed === '/') return '';
+  // Backslashes are normalised to `/` by the WHATWG URL parser, which makes
+  // `https://host\@evil` ambiguous; control characters / whitespace are never
+  // part of a legitimate endpoint. Reject both before parsing (red-team
+  // finding: `\\@` look-alike bypass attempt).
+  if (/[\\\u0000-\u0020\u007f]/.test(trimmed)) return null;
   if (!/^https?:\/\//i.test(trimmed)) return null;
   let parsed: URL;
   try {

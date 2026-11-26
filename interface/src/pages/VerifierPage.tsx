@@ -7,6 +7,7 @@ import { useI18n } from '../i18n';
 import { useApiResource } from '../hooks/useApiResource';
 import { fetchCurrentDraw, fetchHistory, fetchVerification } from '../services/api';
 import { ACTIVE_DEPLOYMENTS, tonviewerAddressUrl } from '../config/deployments';
+import { safeExternalUrl } from '../utils/externalUrl';
 import { drawStatusKey } from '../utils/status';
 import { verifyVrf, type VerificationResult } from '../services/vrfVerifier';
 import { formatTonFromNano } from '../utils/format';
@@ -482,7 +483,7 @@ function GameVerifier({
               {proof ? (
                 <a
                   className="link mt-2 inline-flex items-center gap-1 text-xs"
-                  href={proof.tonviewerUrl ?? tonviewerAddressUrl(proof.drawAddress)}
+                  href={safeExternalUrl(proof.tonviewerUrl, tonviewerAddressUrl(proof.drawAddress))}
                   target="_blank"
                   rel="noreferrer noopener"
                 >
