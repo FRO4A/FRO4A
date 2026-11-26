@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Bright misty alpine mountain ridge">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#dfe6ee"/>
+      <stop offset="42%" stop-color="#eef2f7"/>
+      <stop offset="100%" stop-color="#f8fafc"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="22%" cy="12%" r="42%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="34%" stop-color="#ffffff" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="far" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b8c4d1"/>
+      <stop offset="100%" stop-color="#d6dde5"/>
+    </linearGradient>
+    <linearGradient id="mid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#93a1b1"/>
+      <stop offset="100%" stop-color="#b5c0cc"/>
+    </linearGradient>
+    <linearGradient id="near" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#74818f"/>
+      <stop offset="100%" stop-color="#9aa6b3"/>
+    </linearGradient>
+    <linearGradient id="fore" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5f6b78"/>
+      <stop offset="100%" stop-color="#7f8b98"/>
+    </linearGradient>
+    <linearGradient id="snow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.96"/>
+      <stop offset="100%" stop-color="#e2e8f0" stop-opacity="0.2"/>
+    </linearGradient>
+    <linearGradient id="mist" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="55%" stop-color="#ffffff" stop-opacity="0.62"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+    <filter id="soft2" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#sky)"/>
+  <rect width="1600" height="1000" fill="url(#sun)"/>
+
+  <!-- distant silver ridge -->
+  <path d="M0 640 L90 585 L150 610 L228 520 L292 566 L360 470 L430 545 L505 470 L585 560 L660 505 L742 585 L820 500 L900 575 L978 530 L1060 600 L1148 540 L1230 610 L1310 555 L1400 620 L1480 570 L1600 635 L1600 1000 L0 1000 Z" fill="url(#far)" opacity="0.75"/>
+
+  <!-- high-altitude mist -->
+  <ellipse cx="470" cy="620" rx="540" ry="80" fill="#ffffff" opacity="0.5" filter="url(#soft2)"/>
+  <ellipse cx="1200" cy="590" rx="480" ry="70" fill="#ffffff" opacity="0.44" filter="url(#soft2)"/>
+
+  <!-- main limestone ridge -->
+  <path d="M0 760 L70 690 L128 726 L214 612 L282 660 L356 548 L430 640 L508 592 L584 684 L660 620 L748 706 L830 638 L918 722 L1002 652 L1084 730 L1166 662 L1252 742 L1338 676 L1428 750 L1512 690 L1600 760 L1600 1000 L0 1000 Z" fill="url(#mid)"/>
+  <path d="M214 612 L282 660 L250 704 L190 682 Z" fill="url(#snow)"/>
+  <path d="M356 548 L430 640 L398 690 L330 610 Z" fill="url(#snow)"/>
+  <path d="M508 592 L584 684 L552 716 L486 646 Z" fill="url(#snow)" opacity="0.8"/>
+  <path d="M748 706 L830 638 L866 700 L804 744 Z" fill="url(#snow)" opacity="0.86"/>
+  <path d="M1002 652 L1084 730 L1050 768 L976 700 Z" fill="url(#snow)" opacity="0.8"/>
+  <path d="M1252 742 L1338 676 L1374 736 L1306 780 Z" fill="url(#snow)" opacity="0.72"/>
+
+  <!-- talus shadow facets -->
+  <path d="M430 640 L508 592 L470 700 L398 690 Z" fill="#6f7d8c" opacity="0.28"/>
+  <path d="M830 638 L918 722 L864 768 L804 744 Z" fill="#6f7d8c" opacity="0.24"/>
+  <path d="M1084 730 L1166 662 L1170 772 L1050 768 Z" fill="#6f7d8c" opacity="0.2"/>
+
+  <!-- near pale ridge -->
+  <path d="M0 880 L84 804 L160 842 L250 742 L344 824 L430 716 L520 812 L610 744 L704 838 L800 770 L892 856 L990 786 L1094 868 L1190 800 L1294 878 L1390 812 L1490 884 L1600 826 L1600 1000 L0 1000 Z" fill="url(#near)"/>
+  <path d="M430 716 L520 812 L486 848 L408 782 Z" fill="url(#snow)" opacity="0.55"/>
+  <path d="M800 770 L892 856 L858 884 L790 818 Z" fill="url(#snow)" opacity="0.45"/>
+  <path d="M1294 878 L1390 812 L1420 862 L1352 900 Z" fill="url(#snow)" opacity="0.38"/>
+
+  <!-- foreground ridge -->
+  <path d="M0 1000 L0 918 L96 866 L190 906 L286 842 L384 912 L482 856 L586 926 L690 872 L794 936 L906 880 L1016 942 L1124 886 L1238 946 L1350 892 L1462 948 L1600 900 L1600 1000 Z" fill="url(#fore)"/>
+
+  <!-- valley haze -->
+  <rect y="700" width="1600" height="280" fill="url(#mist)"/>
+  <ellipse cx="800" cy="770" rx="940" ry="120" fill="#ffffff" opacity="0.34" filter="url(#soft)"/>
+
+  <!-- sunlit ridge catch-light -->
+  <path d="M0 640 L90 585 L150 610 L228 520 L292 566 L360 470 L430 545 L505 470 L585 560 L660 505 L742 585 L820 500 L900 575 L978 530 L1060 600 L1148 540 L1230 610 L1310 555 L1400 620 L1480 570 L1600 635" fill="none" stroke="#ffffff" stroke-opacity="0.7" stroke-width="1.6"/>
+</svg>

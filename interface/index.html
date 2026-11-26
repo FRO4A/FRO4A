@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="FRO4A — a wallet-first, mathematically closed pari-mutuel lottery on TON with Soulbound NFT tickets and ed25519 VRF fairness."
+    />
+    <meta name="theme-color" content="#EEF1F5" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="apple-touch-icon" href="./tonconnect-icon.png" />
+    <title>FRO4A</title>
+    <script>
+      // Apply the persisted session-only theme before the first paint.
+      (function () {
+        try {
+          var stored = window.sessionStorage.getItem('fro4a_theme');
+          if (stored !== 'light' && stored !== 'dark') {
+            stored = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          document.documentElement.setAttribute('data-theme', stored);
+        } catch (error) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

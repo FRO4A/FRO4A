@@ -1,0 +1,69 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+    # The tunnel script commits this file on every restart: it must never
+    # trigger a rebuild (that would overwrite the fresh endpoint with a stale
+    # copy). Raw GitHub serves the new value immediately.
+    #
+    # NOTE: GitHub forbids combining `paths` with `paths-ignore` for the same
+    # event, so this workflow is filtered by exclusion only.
+    paths-ignore:
+      - 'interface/public/runtime-config.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'interface/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: interface
+        run: npm ci
+
+      - name: Build interface
+        working-directory: interface
+        run: npm run build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+        with:
+          # The repository starts without GitHub Pages enabled; the job token
+          # (pages: write) bootstraps the "GitHub Actions" publishing source.
+          enablement: true
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'interface/dist'
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,7 @@
+# FRO4A public frontend (GitHub Pages) — build artefacts and local secrets
+node_modules/
+dist/
+.env*
+*.log
+.DS_Store
+Thumbs.db
