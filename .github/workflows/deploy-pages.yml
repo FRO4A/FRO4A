@@ -27,11 +27,20 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # Supply-chain hardening: every action is pinned to the full 40-character
+      # commit SHA of an official release. A retargeted tag (or a compromised
+      # upstream account moving `vX`) can therefore never change what runs in
+      # this privileged workflow. The trailing `# vX.Y.Z` is informational and
+      # must be updated together with the SHA.
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The build only reads the repo: never persist the job token in
+          # .git/config, where a compromised dependency could steal it.
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -46,14 +55,14 @@ jobs:
         run: npm run build
 
       - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
         with:
           # The repository starts without GitHub Pages enabled; the job token
           # (pages: write) bootstraps the "GitHub Actions" publishing source.
           enablement: true
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: 'interface/dist'
 
@@ -66,4 +75,7 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        # `actions/deploy-pages` is the only step using the `pages` environment:
+        # pinning it to a commit SHA keeps the OIDC `id-token` out of reach of
+        # a mutated tag.
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
