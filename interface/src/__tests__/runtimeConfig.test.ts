@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  API_BASE_STORAGE_KEY,
+  isTrustedOverrideHost,
   parseStartParamApiBaseUrl,
+  rememberOverrideApiBaseUrl,
   resolveApiAssetUrl,
   sanitizeApiBaseUrl,
+  sanitizeOverrideApiBaseUrl,
   selectApiBaseUrl,
+  writeStoredApiBaseUrl,
 } from '../lib/runtimeConfig';
 
 describe('runtime API base URL sanitisation', () => {
@@ -132,3 +137,88 @@ describe('runtime API base URL priority', () => {
     ).toBe(stored);
   });
 });
+
+/** Minimal in-memory Storage stand-in for the session-scoping assertions. */
+function fakeStorage() {
+  const values = new Map<string, string>();
+  const calls = { sets: [] as string[], removes: [] as string[] };
+  return {
+    storage: {
+      setItem(key: string, value: string): void {
+        calls.sets.push(`${key}=${value}`);
+        values.set(key, value);
+      },
+      removeItem(key: string): void {
+        calls.removes.push(key);
+        values.delete(key);
+      },
+    },
+    calls,
+    values,
+  };
+}
+
+describe('?api= hijack / phishing protection', () => {
+  it('accepts only Cloudflare Quick Tunnels and localhost backends', () => {
+    expect(sanitizeOverrideApiBaseUrl('https://fro4a-test.trycloudflare.com')).toBe(
+      'https://fro4a-test.trycloudflare.com',
+    );
+    expect(sanitizeOverrideApiBaseUrl('https://trycloudflare.com/')).toBe(
+      'https://trycloudflare.com',
+    );
+    expect(sanitizeOverrideApiBaseUrl('http://localhost:4000')).toBe('http://localhost:4000');
+    expect(sanitizeOverrideApiBaseUrl('http://127.0.0.1:4000/')).toBe('http://127.0.0.1:4000');
+  });
+
+  it('rejects every arbitrary third-party domain and look-alike host', () => {
+    const hostile = [
+      'https://evil-attacker.com',
+      'https://evil-attacker.com/api',
+      'https://trycloudflare.com.evil.example',
+      'https://evil-trycloudflare.com',
+      'https://fro4a.github.io/FRO4A/',
+      'http://localhost.evil.example:4000',
+      'https://user:pass@abc.trycloudflare.com',
+      'https://abc.trycloudflare.com/?redirect=1',
+      'javascript:alert(1)',
+    ];
+    for (const value of hostile) {
+      expect(sanitizeOverrideApiBaseUrl(value)).toBeNull();
+    }
+  });
+
+  it('matches hosts case-insensitively and tolerates a trailing dot', () => {
+    expect(isTrustedOverrideHost('ABC.TRYCLOUDFLARE.COM')).toBe(true);
+    expect(isTrustedOverrideHost('abc.trycloudflare.com.')).toBe(true);
+    expect(isTrustedOverrideHost('localhost')).toBe(true);
+    expect(isTrustedOverrideHost('127.0.0.1')).toBe(true);
+    expect(isTrustedOverrideHost('trycloudflare.com.evil.example')).toBe(false);
+    expect(isTrustedOverrideHost('nottrycloudflare.com')).toBe(false);
+    expect(isTrustedOverrideHost('')).toBe(false);
+  });
+
+  it('rejects hostile Telegram start parameters as well', () => {
+    expect(parseStartParamApiBaseUrl('api=https://evil-attacker.com')).toBeNull();
+    expect(parseStartParamApiBaseUrl('api=https://evil-trycloudflare.com')).toBeNull();
+    expect(parseStartParamApiBaseUrl('api=https://ok-tunnel.trycloudflare.com')).toBe(
+      'https://ok-tunnel.trycloudflare.com',
+    );
+  });
+
+  it('persists overrides into sessionStorage only — never localStorage', () => {
+    const session = fakeStorage();
+    const local = fakeStorage();
+    rememberOverrideApiBaseUrl('https://fresh-tunnel.trycloudflare.com', session.storage);
+    expect(session.calls.sets).toEqual([
+      `${API_BASE_STORAGE_KEY}=https://fresh-tunnel.trycloudflare.com`,
+    ]);
+    expect(local.calls.sets).toEqual([]);
+    expect(local.values.size).toBe(0);
+
+    // Clearing writes the same single area (removal), still never localStorage.
+    writeStoredApiBaseUrl(session.storage, '');
+    expect(session.calls.removes).toEqual([API_BASE_STORAGE_KEY]);
+    expect(local.calls.removes).toEqual([]);
+  });
+});
+

@@ -4,6 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
+    <!--
+      Strict CSP (GitHub Pages cannot set response headers, so this meta policy
+      is the document policy):
+        - scripts only from this origin (the theme bootstrap is an external
+          same-origin file, so no `'unsafe-inline'` is required),
+        - inline styles allowed for Tailwind/React runtime + TON Connect UI,
+        - images from same-origin, data:/blob: and approved APIs/tunnel,
+        - network calls restricted to this origin, the Cloudflare tunnel, the
+          canonical raw GitHub config and TON RPC/bridge/wallet domains.
+      `frame-ancestors` is intentionally omitted: browsers ignore it in a meta
+      tag and Telegram must be able to frame the Mini App.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.trycloudflare.com https://*.tonapi.io; font-src 'self' data:; connect-src 'self' https://*.trycloudflare.com https://raw.githubusercontent.com https://toncenter.com https://testnet.toncenter.com https://tonapi.io https://testnet.tonapi.io https://bridge.tonapi.io wss://bridge.tonapi.io https://connect.tonhubapi.com; media-src 'self' blob:; worker-src 'self' blob:; frame-src 'self' https://*.tonapi.io https://connect.tonhubapi.com; object-src 'none'; base-uri 'self'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
     <meta
       name="description"
       content="FRO4A — a wallet-first, mathematically closed pari-mutuel lottery on TON with Soulbound NFT tickets and ed25519 VRF fairness."
@@ -12,20 +29,8 @@
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="apple-touch-icon" href="./tonconnect-icon.png" />
     <title>FRO4A</title>
-    <script>
-      // Apply the persisted session-only theme before the first paint.
-      (function () {
-        try {
-          var stored = window.sessionStorage.getItem('fro4a_theme');
-          if (stored !== 'light' && stored !== 'dark') {
-            stored = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-          }
-          document.documentElement.setAttribute('data-theme', stored);
-        } catch (error) {
-          document.documentElement.setAttribute('data-theme', 'light');
-        }
-      })();
-    </script>
+    <!-- Apply the persisted session-only theme before the first paint. -->
+    <script src="./theme-boot.js"></script>
   </head>
   <body>
     <div id="root"></div>

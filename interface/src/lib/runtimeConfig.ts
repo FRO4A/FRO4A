@@ -2,18 +2,27 @@
  * Runtime backend URL resolution — zero-rebuild Cloudflare Quick Tunnel switching.
  *
  * PRIVACY: no cookies, no accounts, no analytics. The only persisted value is a
- * non-identifying API hostname kept under `fro4a_api_base` in both
- * `sessionStorage` and `localStorage`.
+ * non-identifying API hostname kept under `fro4a_api_base`.
+ *
+ * SECURITY (anti-hijack): the `?api=` / Telegram start-param overrides are
+ * UNTRUSTED input. They are only honoured when the hostname is a Cloudflare
+ * Quick Tunnel (`*.trycloudflare.com`) or the local dev backend
+ * (`localhost` / `127.0.0.1`), and they are persisted to `sessionStorage`
+ * ONLY — never to `localStorage`. A shared phishing link such as
+ * `https://fro4a.github.io/FRO4A/?api=https://evil-attacker.com` is therefore
+ * rejected outright and can never survive a new browser session.
  *
  * Priority:
- *   1. `?api=<url>` query parameter — explicit operator override, persisted to
- *      `sessionStorage` + `localStorage` immediately.
+ *   1. `?api=<url>` query parameter — explicit operator override, validated
+ *      against the tunnel/local host allow-list and kept in `sessionStorage`.
  *   2. Telegram `initDataUnsafe.start_param` / `?tgWebAppStartParam=` — lets a
- *      BotFather Mini App link carry the live tunnel.
+ *      BotFather Mini App link carry the live tunnel (same allow-list,
+ *      `sessionStorage` scope).
  *   3. Published runtime config — `raw.githubusercontent.com/FRO4A/FRO4A/main/
  *      interface/public/runtime-config.json` first (updated by the tunnel
- *      script minutes after a restart), then `./runtime-config.json`.
- *   4. Stored value (`sessionStorage`, then `localStorage`).
+ *      script minutes after a restart), then `./runtime-config.json`. This is
+ *      the canonical, repository-controlled source.
+ *   4. Stored value (`sessionStorage`, then a host-checked `localStorage`).
  *   5. `import.meta.env.VITE_API_BASE_URL`.
  *
  * An empty result means "same-origin relative requests" (`/api/...`).
@@ -30,12 +39,19 @@ export const RUNTIME_CONFIG_TIMEOUT_MS = 2000;
 /** Telegram Web/desktop forwards `?startapp=<value>` as these query keys. */
 export const START_PARAM_QUERY_KEYS: readonly string[] = ['tgWebAppStartParam', 'start_param'];
 
+/** The only suffix accepted for tunnel overrides (exact or `*.` subdomain). */
+export const TRUSTED_TUNNEL_DOMAIN = 'trycloudflare.com';
+
+/** Local development hosts (HTTP is tolerated for these two only). */
+export const TRUSTED_LOCAL_HOSTS: readonly string[] = ['localhost', '127.0.0.1'];
+
 let activeApiBaseUrl: string | null = null;
 let initialization: Promise<string> | null = null;
 
 function hasWindow(): boolean {
   return typeof window !== 'undefined';
 }
+
 
 /**
  * Validate one API base URL.
@@ -66,22 +82,75 @@ export function sanitizeApiBaseUrl(raw: string | null | undefined): string | nul
   return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, '');
 }
 
-/** Write (or clear) the resolved endpoint in both storage areas. */
-function rememberApiBaseUrl(value: string): void {
-  if (!hasWindow()) return;
-  for (const storage of [safeSessionStorage(), safeLocalStorage()]) {
-    if (storage === null) continue;
-    try {
-      if (value.length > 0) {
-        storage.setItem(API_BASE_STORAGE_KEY, value);
-      } else {
-        storage.removeItem(API_BASE_STORAGE_KEY);
-      }
-    } catch {
-      // Storage may be unavailable (private mode / embedded webview).
-    }
+/**
+ * True for `*.trycloudflare.com` (or the bare domain) and the local dev hosts.
+ *
+ * Deliberately strict: `trycloudflare.com.evil.example`,
+ * `evil-trycloudflare.com`, `fro4a.github.io` and every other third-party
+ * domain are rejected, so a shared `?api=` phishing link cannot redirect API
+ * traffic to an attacker.
+ */
+export function isTrustedOverrideHost(hostname: string): boolean {
+  const host = hostname
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '');
+  if (host.length === 0) return false;
+  if (TRUSTED_LOCAL_HOSTS.includes(host)) return true;
+  return host === TRUSTED_TUNNEL_DOMAIN || host.endsWith(`.${TRUSTED_TUNNEL_DOMAIN}`);
+}
+
+/**
+ * Sanitizes an UNTRUSTED override (`?api=`, Telegram start param): structural
+ * URL validation first, then the tunnel/local host allow-list. Anything else
+ * returns `null` and is never stored or used.
+ */
+export function sanitizeOverrideApiBaseUrl(raw: string | null | undefined): string | null {
+  const value = sanitizeApiBaseUrl(raw);
+  if (value === null || value.length === 0) return value;
+  try {
+    return isTrustedOverrideHost(new URL(value).hostname) ? value : null;
+  } catch {
+    return null;
   }
 }
+
+/** Write (or clear) the endpoint in one storage area; failures are ignored. */
+export function writeStoredApiBaseUrl(
+  storage: Pick<Storage, 'setItem' | 'removeItem'> | null,
+  value: string,
+): void {
+  if (storage === null) return;
+  try {
+    if (value.length > 0) {
+      storage.setItem(API_BASE_STORAGE_KEY, value);
+    } else {
+      storage.removeItem(API_BASE_STORAGE_KEY);
+    }
+  } catch {
+    // Storage may be unavailable (private mode / embedded webview).
+  }
+}
+
+/** Canonical endpoint (published runtime config): both storage areas. */
+function rememberApiBaseUrl(value: string): void {
+  writeStoredApiBaseUrl(safeSessionStorage(), value);
+  writeStoredApiBaseUrl(safeLocalStorage(), value);
+}
+
+/**
+ * UNTRUSTED `?api=` / start-param override: `sessionStorage` ONLY.
+ * It is never written to `localStorage`, so a phishing link cannot survive the
+ * tab session; the next visit resolves the canonical runtime config again.
+ */
+export function rememberOverrideApiBaseUrl(
+  value: string,
+  session: Pick<Storage, 'setItem' | 'removeItem'> | null = safeSessionStorage(),
+): void {
+  writeStoredApiBaseUrl(session, value);
+}
+
 
 function safeSessionStorage(): Storage | null {
   if (!hasWindow()) return null;
@@ -101,20 +170,43 @@ function safeLocalStorage(): Storage | null {
   }
 }
 
-function readStorageApiBaseUrl(storage: Storage | null): string | null {
+function readStorageApiBaseUrl(
+  storage: Storage | null,
+  trustedHostOnly: boolean,
+): string | null {
   if (storage === null) return null;
   try {
-    const value = sanitizeApiBaseUrl(storage.getItem(API_BASE_STORAGE_KEY));
-    return value !== null && value.length > 0 ? value : null;
+    const stored = storage.getItem(API_BASE_STORAGE_KEY);
+    const value = trustedHostOnly
+      ? sanitizeOverrideApiBaseUrl(stored)
+      : sanitizeApiBaseUrl(stored);
+    if (value === null || value.length === 0) {
+      // Purge legacy/hijacked values (e.g. an old `?api=` override persisted to
+      // localStorage before overrides became session-scoped).
+      if (stored !== null && trustedHostOnly) {
+        try {
+          storage.removeItem(API_BASE_STORAGE_KEY);
+        } catch {
+          // Ignore storage failures.
+        }
+      }
+      return null;
+    }
+    return value;
   } catch {
     return null;
   }
 }
 
-/** Stored fallback: `sessionStorage` first, then `localStorage`. */
+/**
+ * Stored fallback: `sessionStorage` first (may hold a host-validated override
+ * or a canonical tunnel), then `localStorage` — which is only trusted when its
+ * host passes the tunnel/local allow-list.
+ */
 function readStoredApiBaseUrl(): string | null {
   return (
-    readStorageApiBaseUrl(safeSessionStorage()) ?? readStorageApiBaseUrl(safeLocalStorage())
+    readStorageApiBaseUrl(safeSessionStorage(), false) ??
+    readStorageApiBaseUrl(safeLocalStorage(), true)
   );
 }
 
@@ -149,7 +241,7 @@ export function parseStartParamApiBaseUrl(raw: string | null | undefined): strin
   if (marker >= 0) candidates.push(decoded.slice(marker + 'api='.length));
   candidates.push(decoded);
   for (const candidate of candidates) {
-    const value = sanitizeApiBaseUrl(candidate.split('&')[0]);
+    const value = sanitizeOverrideApiBaseUrl(candidate.split('&')[0]);
     if (value !== null && value.length > 0) return value;
   }
   return null;
@@ -190,8 +282,11 @@ function readStartParamApiBaseUrl(): string | null {
 
 /**
  * Read `?api=<tunnel>` without side effects.
- * A stale value is tolerated; `initializeRuntimeConfig` persists it as soon as
- * it wins, so a reload keeps the endpoint.
+ *
+ * Only a `*.trycloudflare.com` or localhost/127.0.0.1 host is accepted; any
+ * other value is ignored, so a shared phishing link cannot hijack the API.
+ * A stale trusted value is still tolerated: `initializeRuntimeConfig` keeps it
+ * in `sessionStorage` for this tab only.
  */
 function readQueryApiBaseUrl(): string | null {
   if (!hasWindow()) return null;
@@ -202,7 +297,7 @@ function readQueryApiBaseUrl(): string | null {
     return null;
   }
   if (!url.searchParams.has(API_QUERY_PARAM)) return null;
-  return sanitizeApiBaseUrl(url.searchParams.get(API_QUERY_PARAM));
+  return sanitizeOverrideApiBaseUrl(url.searchParams.get(API_QUERY_PARAM));
 }
 
 /**
@@ -303,21 +398,21 @@ export function initializeRuntimeConfig(): Promise<string> {
   if (activeApiBaseUrl !== null) return Promise.resolve(activeApiBaseUrl);
   if (initialization !== null) return initialization;
   initialization = (async (): Promise<string> => {
-    // 1. Explicit `?api=` override: resolve, persist and boot without any
-    //    network round-trip.
+    // 1. Explicit `?api=` override: host-allow-listed, kept in sessionStorage
+    //    only, and booted without any network round-trip.
     const query = readQueryApiBaseUrl();
     if (query !== null && query.length > 0) {
       clearQueryApiParam();
-      rememberApiBaseUrl(query);
+      rememberOverrideApiBaseUrl(query);
       activeApiBaseUrl = query;
       return query;
     }
 
     // 2. Telegram start parameter (`?tgWebAppStartParam=`, `?startapp=` or
-    //    `initDataUnsafe.start_param`).
+    //    `initDataUnsafe.start_param`) — same host allow-list, session scope.
     const startParam = readStartParamApiBaseUrl();
     if (startParam !== null) {
-      rememberApiBaseUrl(startParam);
+      rememberOverrideApiBaseUrl(startParam);
       activeApiBaseUrl = startParam;
       return startParam;
     }
