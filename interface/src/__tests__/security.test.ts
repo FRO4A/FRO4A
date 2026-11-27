@@ -22,26 +22,18 @@ describe('hardened index.html', () => {
     // scripts must never be inline.
     expect(csp).toContain("style-src 'self' 'unsafe-inline'");
     expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
-    expect(csp).toContain(
-      "img-src 'self' data: blob: https://*.trycloudflare.com https://*.tonapi.io",
-    );
-    expect(csp).toContain("font-src 'self' data:");
+    // TON Connect wallet icons are served by dozens of independent wallet CDNs
+    // (`wallets-list-v2.json`): only a scheme-level source can cover them all.
+    expect(csp).toContain("img-src 'self' data: blob: https:");
+    expect(csp).toContain("font-src 'self' data: https:");
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("base-uri 'self'");
-    expect(csp).toContain("form-action 'none'");
-    for (const origin of [
-      "'self'",
-      'https://*.trycloudflare.com',
-      'https://raw.githubusercontent.com',
-      'https://toncenter.com',
-      'https://testnet.toncenter.com',
-      'https://tonapi.io',
-      'https://testnet.tonapi.io',
-      'https://bridge.tonapi.io',
-      'wss://bridge.tonapi.io',
-      'https://connect.tonhubapi.com',
-    ]) {
-      expect(csp).toContain(origin);
+    expect(csp).toContain("form-action 'self'");
+    // Every wallet registers its own bridge (HTTPS SSE, some WSS): the policy
+    // must be scheme-based or "Connect" hangs on a blocked event stream.
+    expect(csp).toContain("connect-src 'self' https: wss:");
+    for (const token of ["'self'", 'https:', 'wss:']) {
+      expect(csp).toContain(token);
     }
   });
 

@@ -370,19 +370,25 @@ describe('RED TEAM vector 4: document Content-Security-Policy', () => {
     expect(map.get('default-src')).toEqual(["'self'"]);
     expect(map.get('object-src')).toEqual(["'none'"]);
     expect(map.get('base-uri')).toEqual(["'self'"]);
-    expect(map.get('form-action')).toEqual(["'none'"]);
+    expect(map.get('form-action')).toEqual(["'self'"]);
     expect(map.get('style-src')).toContain("'self'");
+    expect(map.get('style-src')).toContain("'unsafe-inline'");
     expect(indexHtml).toContain('<meta name="referrer" content="no-referrer" />');
 
     const connect = map.get('connect-src') ?? [];
     expect(connect).not.toContain('*');
+    // TON Connect wallets advertise their own HTTPS SSE / WSS bridges, so the
+    // policy is scheme-scoped. Insecure schemes stay forbidden.
     for (const origin of connect) {
-      expect(origin, origin).toMatch(/^'self'$|^https:\/\/|^wss:\/\//);
+      expect(origin, origin).toMatch(/^'self'$|^https:(?:\/\/.*)?$|^wss:(?:\/\/.*)?$/);
+      expect(origin, origin).not.toMatch(/^http:|^ws:/);
       expect(origin).not.toMatch(/attacker|evil|169\.254|metadata\.google/i);
     }
     const images = map.get('img-src') ?? [];
     expect(images).not.toContain('*');
     for (const origin of images) {
+      expect(origin, origin).toMatch(/^'self'$|^data:$|^blob:$|^https:(?:\/\/.*)?$/);
+      expect(origin, origin).not.toMatch(/^http:/);
       expect(origin, origin).not.toMatch(/attacker|evil|169\.254|metadata\.google/i);
     }
   });

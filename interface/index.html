@@ -10,15 +10,25 @@
         - scripts only from this origin (the theme bootstrap is an external
           same-origin file, so no `'unsafe-inline'` is required),
         - inline styles allowed for Tailwind/React runtime + TON Connect UI,
-        - images from same-origin, data:/blob: and approved APIs/tunnel,
-        - network calls restricted to this origin, the Cloudflare tunnel, the
-          canonical raw GitHub config and TON RPC/bridge/wallet domains.
+        - images from same-origin, data:/blob: and ANY HTTPS host, because
+          `wallets-list-v2.json` serves wallet icons from dozens of independent
+          CDNs (tonkeeper.com, tonhub.com, static.okx.com, config.ton.org,
+          raw.githubusercontent.com, ...). An allow-list here leaves blank
+          squares in the TON Connect wallet modal,
+        - network calls restricted to this origin plus HTTPS/WSS, because every
+          TON Connect wallet registers its OWN bridge (`bridge.tonapi.io`,
+          `bridge.ton.space`, `connect.tonhubapi.com`,
+          `tonconnectbridge.mytonwallet.org`, `sse-bridge.hot-labs.org`, ...)
+          as well as the remote wallets list at `https://config.ton.org`. A
+          host allow-list blocks the SSE bridge, so "Connect" hangs forever.
+        - `form-action 'self'`: Telegram wallets return into the Mini App
+          without posting cross-origin forms.
       `frame-ancestors` is intentionally omitted: browsers ignore it in a meta
       tag and Telegram must be able to frame the Mini App.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.trycloudflare.com https://*.tonapi.io; font-src 'self' data:; connect-src 'self' https://*.trycloudflare.com https://raw.githubusercontent.com https://toncenter.com https://testnet.toncenter.com https://tonapi.io https://testnet.tonapi.io https://bridge.tonapi.io wss://bridge.tonapi.io https://connect.tonhubapi.com; media-src 'self' blob:; worker-src 'self' blob:; frame-src 'self' https://*.tonapi.io https://connect.tonhubapi.com; object-src 'none'; base-uri 'self'; form-action 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; media-src 'self' blob: https:; worker-src 'self' blob:; frame-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'"
     />
     <meta name="referrer" content="no-referrer" />
     <meta

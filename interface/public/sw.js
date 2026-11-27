@@ -6,10 +6,19 @@
  * zero-rebuild tunnel switches and TON Connect wallet manifests can never be
  * served from an old cache.
  *
+ * Cross-origin traffic is NEVER touched: TON Connect wallet icons come from
+ * third-party CDNs (`wallets-list-v2.json`), the wallets list itself lives on
+ * `https://config.ton.org`, and each wallet exposes an independent SSE bridge
+ * (`bridge.tonapi.io`, `bridge.ton.space`, `connect.tonhubapi.com`,
+ * `tonconnectbridge.mytonwallet.org`, ...). Calling `respondWith()` on those
+ * requests buffers the event stream (so "Connect" hangs) and a stale cached
+ * icon turns the wallet tiles into blank squares.
+ *
  * Bump CACHE_VERSION on every release: `activate` deletes every older cache, so
- * Telegram mobile clients purge stale bundles on the next launch.
+ * Telegram mobile clients purge stale bundles (and any previously cached
+ * cross-origin response) on the next launch.
  */
-const CACHE_VERSION = 'fro4a-shell-v2';
+const CACHE_VERSION = 'fro4a-shell-v3';
 const PRECACHE_PATHS = [
   './',
   './index.html',
@@ -112,6 +121,12 @@ self.addEventListener('fetch', (event) => {
   } catch {
     return;
   }
+  // HARD BYPASS: never call respondWith() for another origin. This covers the
+  // TON Connect wallet icons (third-party CDNs), `wallets-v2.json` on
+  // config.ton.org, every wallet's SSE bridge and Telegram's own assets. Any
+  // interception here would buffer the bridge stream ("Connect" hangs) and
+  // stale entries would render blank wallet icons.
+  if (url.origin !== self.location.origin) return;
   if (!isCacheableRequest(url)) return;
 
   if (request.mode === 'navigate') {
