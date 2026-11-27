@@ -14,8 +14,8 @@ import WebApp from '@twa-dev/sdk';
 interface TelegramWebAppLike {
   viewportHeight?: number;
   viewportStableHeight?: number;
-  safeAreaInset?: { bottom?: number };
-  contentSafeAreaInset?: { bottom?: number };
+  safeAreaInset?: { top?: number; bottom?: number };
+  contentSafeAreaInset?: { top?: number; bottom?: number };
   onEvent?: (event: string, handler: () => void) => void;
 }
 
@@ -40,6 +40,14 @@ function applyTelegramViewport(app: TelegramWebAppLike): void {
   if (Number.isFinite(stableHeight) && stableHeight > 0) {
     root.style.setProperty('--tg-viewport-stable-height', `${stableHeight}px`);
   }
+  // Device notch/status-bar inset + Telegram's own top UI inset. The header
+  // cluster uses `max(0.5rem, env(safe-area-inset-top), var(--tg-safe-top))` so
+  // it stays clear of Telegram's native fullscreen pills.
+  const safeTop = Number(app.safeAreaInset?.top);
+  const contentTop = Number(app.contentSafeAreaInset?.top);
+  const top = Math.max(0, Number.isFinite(safeTop) ? safeTop : 0) +
+    Math.max(0, Number.isFinite(contentTop) ? contentTop : 0);
+  root.style.setProperty('--tg-safe-top', `${top}px`);
   // Device home-indicator inset + Telegram's own bottom UI inset.
   const safeBottom = Number(app.safeAreaInset?.bottom);
   const contentBottom = Number(app.contentSafeAreaInset?.bottom);

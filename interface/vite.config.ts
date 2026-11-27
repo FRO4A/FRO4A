@@ -101,7 +101,8 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/__tests__/**/*.test.ts'],
+    // `.test.ts` for pure logic, `.test.tsx` for server-rendered component tests.
+    include: ['src/__tests__/**/*.test.ts', 'src/__tests__/**/*.test.tsx'],
     reporters: 'default',
   },
 });

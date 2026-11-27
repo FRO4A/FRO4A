@@ -18,7 +18,7 @@ export function AppShell({
   return (
     <div className="flex min-h-[100dvh] flex-col">
       <MountainBackground />
-      <Header route={route} navigate={navigate} />
+      <Header navigate={navigate} />
       <main className="mx-auto w-full max-w-content flex-1 px-4 pb-28 pt-2 sm:px-6 sm:pb-32">
         <div key={route} className="fade-in">
           {children}

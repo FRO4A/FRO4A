@@ -7,18 +7,27 @@ import { AppShell } from './components/AppShell';
 import { OverviewPage } from './pages/OverviewPage';
 import { GamesPage } from './pages/GamesPage';
 import { MyTicketsPage } from './pages/MyTicketsPage';
-import { VerifierPage } from './pages/VerifierPage';
+import { ticketsViewForRoute } from './utils/ticketsView';
 
 function RoutedApp(): JSX.Element {
   const { route, navigate } = useHashRoute();
+  // `#/verify` is kept as a deep link for every "Verify a draw" CTA. Verify is
+  // now a sub-view of My Tickets, so the route renders the My Tickets tab (which
+  // stays highlighted in the dock) with the verifier already open.
+  const ticketsView = ticketsViewForRoute(route);
+  const myTickets = route === 'tickets' || route === 'verify' ? (
+    <MyTicketsPage
+      view={ticketsView}
+      onViewChange={(next) => navigate(next === 'verify' ? 'verify' : 'tickets')}
+    />
+  ) : null;
   return (
     <AppShell route={route} navigate={navigate}>
       {route === 'overview' ? <OverviewPage navigate={navigate} /> : null}
       {route === 'games' ? <GamesPage initialGame="BALL" navigate={navigate} /> : null}
       {route === 'ball' ? <GamesPage initialGame="BALL" navigate={navigate} /> : null}
       {route === '100k' ? <GamesPage initialGame="100K" navigate={navigate} /> : null}
-      {route === 'tickets' ? <MyTicketsPage /> : null}
-      {route === 'verify' ? <VerifierPage /> : null}
+      {myTickets}
     </AppShell>
   );
 }

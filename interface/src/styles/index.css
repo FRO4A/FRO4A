@@ -250,6 +250,14 @@ body {
   border-radius: 9999px;
 }
 
+/* Compact header cluster: two 36 px glass circles around the wordmark keep the
+   centred `[Theme] [FRO4A] [Language]` cluster inside the ~180 px corridor that
+   Telegram leaves between its native fullscreen `× Close` and `⌄ …` pills. */
+.header-cluster .glass-circle {
+  height: 2.25rem;
+  width: 2.25rem;
+}
+
 .glass-popover {
   background: var(--popover-bg);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -360,6 +368,19 @@ html[data-theme='light'] .dock-item-active {
   font-weight: 700;
   line-height: 1;
   box-shadow: 0 0 0 1px var(--hairline);
+}
+
+/* Quiet monochrome "wallet connected" indicator — deliberately no neon, no blue
+   and no glow: Liquid Glass stays neutral in both Light and Dark themes. */
+.dock-connected-dot {
+  position: absolute;
+  top: -0.0625rem;
+  inset-inline-end: -0.125rem;
+  height: 0.4375rem;
+  width: 0.4375rem;
+  border-radius: 9999px;
+  background: var(--text-secondary);
+  box-shadow: 0 0 0 1px var(--glass-border);
 }
 
 .eyebrow {

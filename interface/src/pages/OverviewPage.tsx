@@ -22,6 +22,8 @@ export function OverviewPage({ navigate }: { navigate: (route: AppRoute) => void
     <div className="space-y-6 pb-2">
       <ConnectionPill visible={overview.reconnecting} />
 
+      {/* `#/verify` opens the My Tickets tab with the Verify sub-view active —
+          Verify is no longer a standalone dock tab. */}
       <section className="flex flex-wrap gap-2">
         <button type="button" className="btn btn-primary" onClick={() => navigate('games')}>
           {t('common.allGames')}

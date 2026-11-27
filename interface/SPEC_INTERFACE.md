@@ -51,7 +51,7 @@ Dark Mode:
 - Typography: `-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", system-ui, sans-serif`. Apply `font-variant-numeric: tabular-nums` to all TON values, countdown timers, percentages, ball numbers, and ticket counters.
 - Radii: `24px` main cards, `16px` nested cards/inputs/metric tiles, `9999px` segmented controls, dock and pill buttons.
 - Background: one fixed full-viewport mountain layer (`fixed inset-0 -z-10 pointer-events-none`) that crossfades with the theme. No solid header strip, no header divider, no footer bar.
-- Navigation: minimal `FRO4A` wordmark on the left; permanently mounted language / theme / wallet glass pills on the right (never hidden); primary navigation lives in a centered floating Liquid Glass bottom dock (`Overview`, `Games`, `My Tickets`, `Verify`) that respects `env(safe-area-inset-bottom)`. Main scroll areas keep `pb-28` so the dock never obscures content.
+- Navigation: the top bar is a single compact, horizontally centred Liquid Glass cluster — Sun/Moon theme circle, the `FRO4A` wordmark, and the globe language circle — with >= `92px` horizontal safe padding and `env(safe-area-inset-top)` / Telegram `safeAreaInset.top` clearance so it can never collide with Telegram's native fullscreen `× Close` / `⌄ …` pills. The wallet is NOT in the top bar. Primary navigation lives in a centred floating Liquid Glass bottom dock (`Overview`, `Games`, `My Tickets`, `Wallet`) that respects `env(safe-area-inset-bottom)`. Main scroll areas keep `pb-28` so the dock never obscures content.
 
 ---
 
@@ -75,10 +75,10 @@ Dark Mode:
   2. Games hub (`#/games`): a floating Liquid Glass segmented switcher (`BALL` | `100K`) above the selected game. Deep links `#/ball` and `#/100k` open the same hub on the requested game.
   3. BALL Game: Live draw stats, exact 8-category prize breakdown (% + live TON amount), 30-day countdown + 10,000-ticket threshold progress bar, ticket picker (or Admin Panel for Admin), and BALL past rounds archive.
   4. 100K Game: Live draw stats, exact 6-tier 100-winner prize breakdown (% per tier, % per ticket, live TON amount), 30-day countdown + 10,000 threshold & 100,000 hard-cap progress, ticket purchase panel (or Admin Panel for Admin), and 100K past rounds archive.
-  5. My Tickets: 100% client-side on-chain viewer for the connected wallet's Active and Past SBT tickets (BALL + 100K), Claim / Refund actions, and 60-day expiry countdown.
-  6. Verify (Fairness Verifier): In-browser ed25519 VRF signature verification and deterministic recalculation of BALL numbers and 100K 6-round Feistel winners.
-- Always-Visible Top Bar: left = clean `FRO4A` wordmark only (no logo square, testnet badge or subtitle); right = permanently mounted (`shrink-0`) language `RU/EN` pill, Sun/Moon theme circle, and wallet glass pill (truncated address or Connect/Кошелёк) that opens a Liquid Glass popover with copy, network and disconnect. No responsive `hidden` classes and no overflow clipping.
-- Bottom Floating Dock: centered Liquid Glass capsule with `Overview`, `Games`, `My Tickets` (subtle ticket-count badge) and `Verify`; active item gets an elevated glass highlight.
+  5. My Tickets: 100% client-side on-chain viewer for the connected wallet's Active and Past SBT tickets (BALL + 100K), Claim / Refund actions, and 60-day expiry countdown. A segmented Liquid Glass switcher at the very top of the screen toggles between `My Tickets` and `Verify` without leaving the tab (`My Tickets` stays the default sub-view).
+  6. Verify (Fairness Verifier): In-browser ed25519 VRF signature verification and deterministic recalculation of BALL numbers and 100K 6-round Feistel winners. Rendered inside the My Tickets tab; `#/verify` deep links (and every "Verify a draw" CTA) open My Tickets with this sub-view already active.
+- Always-Visible Top Bar: one centred, collision-free cluster `[Theme circle] [FRO4A wordmark] [Language globe]`, sized for the ~180px corridor Telegram leaves between its native fullscreen pills (`34–36px` circles, `gap-2`, compact tracking). No wallet control, no responsive `hidden` classes and no overflow clipping. On the `#/verify` deep link the `My Tickets` dock slot stays highlighted.
+- Bottom Floating Dock: centred Liquid Glass capsule with `Overview`, `Games`, `My Tickets` (subtle ticket-count badge) and `Wallet`; active item gets an elevated glass highlight. The Wallet slot opens the TON Connect modal when disconnected, and a viewport-clamped Liquid Glass popover above the dock when connected (shortened address, admin/treasury role badge, network, Copy Address, Disconnect, subtle monochrome connected dot — no neon/blue/green).
 
 ---
 

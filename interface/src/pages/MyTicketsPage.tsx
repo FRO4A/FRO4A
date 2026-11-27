@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { RefreshCw, Ticket, Wallet } from 'lucide-react';
+import { RefreshCw, ShieldCheck, Ticket, Wallet } from 'lucide-react';
 import { useTonAddress, useTonConnectUI } from '@tonconnect/ui-react';
 import type { TicketView } from '../types/game';
 import { useI18n } from '../i18n';
@@ -13,11 +13,73 @@ import { TicketCard } from '../components/TicketCard';
 import { ConnectionPill } from '../components/ui/ConnectionPill';
 import { EmptyState, ErrorState, LoadingState } from '../components/ui/States';
 import { cn } from '../utils/cn';
+import type { TicketsView } from '../utils/ticketsView';
+import { VerifierPage } from './VerifierPage';
 
 type TimeFilter = 'active' | 'past';
 type GameFilter = 'all' | 'BALL' | '100K';
 
-export function MyTicketsPage(): JSX.Element {
+/**
+ * My Tickets tab with the VRF verifier nested inside it.
+ *
+ * The segmented switcher is rendered FIRST so it is immediately visible on
+ * opening My Tickets: `My Tickets` stays the default sub-view and `Verify` is
+ * one tap away while reviewing tickets. It is Liquid Glass and monochrome — the
+ * shield is the only icon and the active segment uses the standard glass pill.
+ */
+export function MyTicketsPage({
+  view = 'tickets',
+  onViewChange,
+}: {
+  view?: TicketsView;
+  onViewChange?: (view: TicketsView) => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  const verifyActive = view === 'verify';
+
+  return (
+    <div className="space-y-4">
+      <div className="glass p-1.5" data-testid="tickets-view-switcher">
+        <div className="segmented w-full" role="tablist" aria-label={t('tickets.title')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={!verifyActive}
+            data-view="tickets"
+            data-active={!verifyActive ? 'true' : 'false'}
+            className={cn(
+              'segment flex min-w-0 flex-1 items-center justify-center gap-1.5',
+              !verifyActive && 'segment-active',
+            )}
+            onClick={() => onViewChange?.('tickets')}
+          >
+            <Ticket size={15} strokeWidth={1.75} className="shrink-0" />
+            <span className="truncate">{t('nav.tickets')}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={verifyActive}
+            data-view="verify"
+            data-active={verifyActive ? 'true' : 'false'}
+            className={cn(
+              'segment flex min-w-0 flex-1 items-center justify-center gap-1.5',
+              verifyActive && 'segment-active',
+            )}
+            onClick={() => onViewChange?.('verify')}
+          >
+            <ShieldCheck size={15} strokeWidth={1.75} className="shrink-0" />
+            <span className="truncate">{t('nav.verify')}</span>
+          </button>
+        </div>
+      </div>
+
+      {verifyActive ? <VerifierPage /> : <TicketsWorkspace />}
+    </div>
+  );
+}
+
+function TicketsWorkspace(): JSX.Element {
   const { t } = useI18n();
   const wallet = useTonAddress();
   const [tonConnectUI] = useTonConnectUI();

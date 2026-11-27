@@ -285,7 +285,7 @@ describe('service worker: same-origin rules', () => {
     expect(await secondResponse.text()).toBe(`network:${assetUrl}`);
     expect(sw.fetchCalls).toEqual([assetUrl]);
 
-    expect(serviceWorkerSource).toContain("const CACHE_VERSION = 'fro4a-shell-v3'");
+    expect(serviceWorkerSource).toContain("const CACHE_VERSION = 'fro4a-shell-v4'");
     expect(serviceWorkerSource).toContain('if (url.origin !== self.location.origin) return;');
   });
 

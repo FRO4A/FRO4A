@@ -1,4 +1,4 @@
-import { House, LayoutGrid, ShieldCheck, Ticket } from 'lucide-react';
+import { House, LayoutGrid, Ticket } from 'lucide-react';
 import { useTonAddress } from '@tonconnect/ui-react';
 import { useI18n } from '../i18n';
 import { useApiResource } from '../hooks/useApiResource';
@@ -6,22 +6,28 @@ import { fetchChainTickets } from '../services/api';
 import type { ChainTicketsResponse } from '../types/api';
 import type { AppRoute } from '../types/game';
 import { cn } from '../utils/cn';
+import { WalletDockItem } from './WalletDockItem';
 
-const ITEMS: ReadonlyArray<{
-  route: AppRoute;
-  key: 'home' | 'games' | 'tickets' | 'verify';
+/**
+ * The three navigation slots. Wallet is the fourth dock slot and is rendered by
+ * <WalletDockItem />. `Verify` is no longer a dock tab: it now lives inside My
+ * Tickets as a segmented sub-view, so `#/verify` keeps the My Tickets tab lit.
+ */
+export const DOCK_ITEMS: ReadonlyArray<{
+  route: Extract<AppRoute, 'overview' | 'games' | 'tickets'>;
+  key: 'home' | 'games' | 'tickets';
   icon: typeof House;
   activeRoutes: readonly AppRoute[];
   badge?: boolean;
 }> = [
   { route: 'overview', key: 'home', icon: House, activeRoutes: ['overview'] },
   { route: 'games', key: 'games', icon: LayoutGrid, activeRoutes: ['games', 'ball', '100k'] },
-  { route: 'tickets', key: 'tickets', icon: Ticket, activeRoutes: ['tickets'], badge: true },
-  { route: 'verify', key: 'verify', icon: ShieldCheck, activeRoutes: ['verify'] },
+  { route: 'tickets', key: 'tickets', icon: Ticket, activeRoutes: ['tickets', 'verify'], badge: true },
 ];
 
 /**
- * Floating Liquid Glass navigation dock.
+ * Floating Liquid Glass navigation dock with four slots:
+ * Overview · Games · My Tickets · Wallet.
  *
  * The badge uses the same read-only public mirror as My Tickets, but only reads
  * a count every 30s so it never duplicates the fast 3s ticket polling inside the
@@ -50,7 +56,7 @@ export function BottomDock({
       aria-label={t('common.mainNavigation')}
     >
       <div className="glass-dock flex items-stretch gap-1 p-1.5">
-        {ITEMS.map((item) => {
+        {DOCK_ITEMS.map((item) => {
           const Icon = item.icon;
           const active = item.activeRoutes.includes(route);
           const showBadge = item.badge === true && ticketCount > 0;
@@ -69,6 +75,7 @@ export function BottomDock({
             </button>
           );
         })}
+        <WalletDockItem />
       </div>
     </nav>
   );
