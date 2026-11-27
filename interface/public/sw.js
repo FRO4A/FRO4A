@@ -18,7 +18,7 @@
  * Telegram mobile clients purge stale bundles (and any previously cached
  * cross-origin response) on the next launch.
  */
-const CACHE_VERSION = 'fro4a-shell-v5';
+const CACHE_VERSION = 'fro4a-shell-v6';
 const PRECACHE_PATHS = [
   './',
   './index.html',

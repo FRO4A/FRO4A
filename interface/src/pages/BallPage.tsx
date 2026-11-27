@@ -11,6 +11,7 @@ import { useWalletQuota } from '../hooks/useWalletQuota';
 import { fetchCurrentDraw, fetchHistory, fetchTakenCombinations } from '../services/api';
 import { readUserQuota } from '../services/quota';
 import { ACTIVE_DEPLOYMENTS } from '../config/deployments';
+import { pinnedAdminAddress, pinnedTreasuryAddress } from '../utils/governance';
 import { isPendingRound } from '../utils/roundState';
 import { formatInteger, formatTon } from '../utils/format';
 import { AdminForceStartCard } from '../components/AdminForceStartCard';
@@ -60,11 +61,7 @@ export function BallPage({ navigate }: { navigate: (route: AppRoute) => void }):
     3_000,
   );
 
-  const role = useRole(
-    wallet,
-    draw?.adminAddress ?? ACTIVE_DEPLOYMENTS.adminAddress,
-    draw?.treasuryAddress ?? ACTIVE_DEPLOYMENTS.treasuryAddress,
-  );
+  const role = useRole(wallet, pinnedAdminAddress(), pinnedTreasuryAddress());
   const networkGuard = useTonNetworkGuard();
   // Strict admin UI: the ADMIN address AND the expected TON chain are required.
   const isAdmin = role === 'ADMIN' && !networkGuard.wrongNetwork;

@@ -6,6 +6,11 @@ import { useI18n } from '../i18n';
 import { useWalletTickets } from '../hooks/useWalletTickets';
 import { buildClaim, buildPackAction, buildRefund } from '../services/messages';
 import { BLOCKED_TRANSACTION_MESSAGE, DrawAddressSecurityError } from '../services/drawTrust';
+import {
+  BLOCKED_TICKET_TRANSACTION_MESSAGE,
+  TicketAddressSecurityError,
+  ticketContractGuard,
+} from '../services/ticketTrust';
 import { WrongTonNetworkError } from '../services/networkGuard';
 import { sendTransaction } from '../services/tonConnect';
 import { GAS } from '../services/opcodes';
@@ -117,8 +122,13 @@ function TicketsWorkspace(): JSX.Element {
         ? buildClaim(ticket.gameType)
         : buildRefund(ticket.gameType);
     try {
-      // The ticket's draw contract is verified against the immutable factory
-      // BEFORE the claim/refund prompt: a spoofed API drawAddress is blocked.
+      // TWO independent proofs before the claim/refund prompt:
+      //   1. the round's draw contract is the canonical factory contract, and
+      //   2. the destination ticket / pack contract is the GENUINE one
+      //      (BALL: locally derived V5 address; 100K: on-chain getPackInfo ->
+      //      canonical draw + connected wallet as owner).
+      // A spoofed API `drawAddress`, `ticketAddress` or `packAddress` throws
+      // before Tonkeeper is ever opened.
       await sendTransaction(
         tonConnectUI,
         [
@@ -128,16 +138,29 @@ function TicketsWorkspace(): JSX.Element {
             payload,
           },
         ],
-        { gameType: ticket.gameType, roundId: ticket.roundId, drawAddress: ticket.drawAddress },
+        {
+          gameType: ticket.gameType,
+          roundId: ticket.roundId,
+          drawAddress: ticket.drawAddress,
+          ticket: ticketContractGuard({
+            gameType: ticket.gameType,
+            ticketAddress: ticket.ticketAddress,
+            packedCombination: ticket.packedCombination,
+            ticketKey: ticket.ticketKey,
+            owner: wallet,
+          }),
+        },
       );
       window.setTimeout(tickets.refresh, 6000);
       window.setTimeout(tickets.refresh, 15000);
       window.setTimeout(() => setPendingAction(null), 6000);
     } catch (error) {
       setActionError(
-        error instanceof DrawAddressSecurityError || error instanceof WrongTonNetworkError
-          ? BLOCKED_TRANSACTION_MESSAGE
-          : t('errors.rejected'),
+        error instanceof TicketAddressSecurityError
+          ? BLOCKED_TICKET_TRANSACTION_MESSAGE
+          : error instanceof DrawAddressSecurityError || error instanceof WrongTonNetworkError
+            ? BLOCKED_TRANSACTION_MESSAGE
+            : t('errors.rejected'),
       );
       setPendingAction(null);
     }
