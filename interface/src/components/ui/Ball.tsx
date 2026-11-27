@@ -25,6 +25,8 @@ export function Ball({
         matched && 'number-ball-match',
         className,
       )}
+      data-ball={red ? 'red' : 'white'}
+      data-matched={matched ? 'true' : 'false'}
       aria-label={`${red ? t('common.redBall') : t('common.whiteBall')} ${value}${matched ? ` (${t('tickets.matchedLabel')})` : ''}`}
     >
       {pad2(value)}

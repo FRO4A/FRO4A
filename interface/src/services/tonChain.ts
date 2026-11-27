@@ -8,7 +8,6 @@ import type {
   HistoryResponse,
   OverviewResponse,
 } from '../types/api';
-import { resolveApiAssetUrl } from '../lib/runtimeConfig';
 import type { GameType, KnownDraw, OnChainTicket, TicketView } from '../types/game';
 import { hundredKWinnerPlace, computeTicketResult, matchedBalls } from '../utils/ticket';
 import { sameAddress } from '../utils/address';
@@ -21,7 +20,6 @@ import {
 } from '../utils/format';
 import { fetchCurrentDraw, fetchHistory, fetchOverview } from './api';
 import {
-  fetchAccountNfts,
   readSnakeString,
   runGetter,
   stackAddress,
@@ -32,7 +30,6 @@ import {
   discoverBallTicketsFromWallet,
   discoverTicketsFromQuotaShards,
   discoverTicketsFromTraces,
-  matchNftCandidates,
   mergeTicketCandidates,
   type TicketCandidate,
 } from './ticketDiscovery';
@@ -126,10 +123,12 @@ export function ticketViewFromChain(
     ticketAddress: ticket.ticketAddress,
     drawAddress: ticket.drawAddress,
     roundId: ticket.roundId,
+    owner: ticket.owner ?? ticket.ownerAddress ?? null,
     ticketKey: ticket.ticketKey,
+    packedCombination: ticket.packedCombination ?? null,
     displayValue: ticket.displayValue,
-    whites: ticket.whiteBalls,
-    red: ticket.redBall,
+    whites: ticket.whites ?? ticket.whiteBalls ?? null,
+    red: ticket.red ?? ticket.redBall ?? null,
     status: ticket.status,
     category,
     place,
@@ -137,9 +136,11 @@ export function ticketViewFromChain(
     name: ticket.gameType === '100K' ? ticket.displayValue : null,
     result: ticket.result,
     drawStatus: ticket.drawStatus ?? chainDraw?.status ?? null,
+    tier: ticket.tier ?? category,
+    tallied: ticket.tallied ?? false,
+    claimed: ticket.claimed ?? ticket.status === 3,
     matchedWhites: ticket.matchedWhites,
     redMatched: ticket.redMatched,
-    nftImageUrl: ticket.nftImageUrl ? resolveApiAssetUrl(ticket.nftImageUrl) : null,
     draw,
     isWinner: ticket.isWinner || (category !== null && category > 0),
   };
@@ -179,9 +180,11 @@ export function packViewFromChain(
     name: pack.displayValue,
     result: pack.result,
     drawStatus: pack.drawStatus ?? chainDraw?.status ?? null,
+    tier: bestPlace,
+    tallied: false,
+    claimed: pack.status === 3,
     matchedWhites: undefined,
     redMatched: undefined,
-    nftImageUrl: null,
     pack: {
       packAddress: pack.packAddress,
       startNumber: pack.startNumber,
@@ -236,7 +239,10 @@ export async function loadKnownDraws(
     for (const item of page.items) mergeDraw(draws, knownDrawFromHistory(item));
   }
 
-  if (!draws.some((draw) => sameAddress(draw.drawAddress, deployments.ballDrawRound1))) {
+  if (
+    deployments.ballDrawRound1.trim().length > 0 &&
+    !draws.some((draw) => sameAddress(draw.drawAddress, deployments.ballDrawRound1))
+  ) {
     draws.push({
       gameType: 'BALL',
       roundId: 1,
@@ -253,7 +259,10 @@ export async function loadKnownDraws(
       tonviewerUrl: null,
     });
   }
-  if (!draws.some((draw) => sameAddress(draw.drawAddress, deployments.draw100kRound1))) {
+  if (
+    deployments.draw100kRound1.trim().length > 0 &&
+    !draws.some((draw) => sameAddress(draw.drawAddress, deployments.draw100kRound1))
+  ) {
     draws.push({
       gameType: '100K',
       roundId: 1,
@@ -297,7 +306,50 @@ function findKnownDraw(draws: KnownDraw[], address: string): KnownDraw | null {
   return draws.find((draw) => sameAddress(draw.drawAddress, address)) ?? null;
 }
 
-function parseBallTicket(ticketAddress: string, stack: import('./tonapi').TonApiStackItem[]): OnChainTicket | null {
+/**
+ * V5 `BallTicket.getTicketData()` — flattened tuple:
+ *   [drawAddress, roundId, owner, packedCombination, white1..white5, red, tallied, claimed]
+ */
+function parseBallTicketV5(
+  ticketAddress: string,
+  stack: import('./tonapi').TonApiStackItem[],
+): OnChainTicket | null {
+  const drawAddress = stackAddress(stack[0]);
+  const roundId = Number(stackNumber(stack[1]) ?? 0n);
+  const owner = stackAddress(stack[2]);
+  const packed = stackNumber(stack[3]);
+  if (!drawAddress || packed === null) return null;
+  const whites = [4, 5, 6, 7, 8].map((index) => Number(stackNumber(stack[index]) ?? 0n));
+  const red = Number(stackNumber(stack[9]) ?? 0n);
+  const tallied = (stackNumber(stack[10]) ?? 0n) !== 0n;
+  const claimed = (stackNumber(stack[11]) ?? 0n) !== 0n;
+  const decoded = whites.every((white) => white >= 1) ? { whites, red } : decodeBallCombination(packed);
+  return {
+    gameType: 'BALL',
+    ticketAddress,
+    drawAddress: drawAddress.toString(),
+    roundId,
+    owner: owner === null ? null : owner.toString(),
+    ticketKey: packed.toString(),
+    packedCombination: packed.toString(),
+    displayValue: formatBallCombination(decoded.whites, decoded.red),
+    whites: decoded.whites,
+    red: decoded.red,
+    status: claimed ? 3 : tallied ? 2 : 0,
+    category: null,
+    place: null,
+    payoutNano: null,
+    name: null,
+    tallied,
+    claimed,
+  };
+}
+
+/** Legacy V4 BALL ticket `getTicketInfo()` reader (old Testnet rounds only). */
+function parseBallTicketLegacy(
+  ticketAddress: string,
+  stack: import('./tonapi').TonApiStackItem[],
+): OnChainTicket | null {
   const drawAddress = stackAddress(stack[0]);
   const packed = stackNumber(stack[2]);
   if (!drawAddress || packed === null) return null;
@@ -313,6 +365,7 @@ function parseBallTicket(ticketAddress: string, stack: import('./tonapi').TonApi
     drawAddress: drawAddress.toString(),
     roundId,
     ticketKey: packed.toString(),
+    packedCombination: packed.toString(),
     displayValue: formatBallCombination(decoded.whites, decoded.red),
     whites: decoded.whites,
     red: decoded.red,
@@ -321,6 +374,8 @@ function parseBallTicket(ticketAddress: string, stack: import('./tonapi').TonApi
     place: null,
     payoutNano: null,
     name: null,
+    tallied: status === 2 || status === 3,
+    claimed: status === 3,
   };
 }
 
@@ -364,17 +419,35 @@ export async function readTicket(
   expectedOwner?: string,
   signal?: AbortSignal,
 ): Promise<OnChainTicket> {
-  const method = gameType === 'BALL' ? 'getTicketInfo' : 'get_ticket_info';
-  const result = await runGetter(ticketAddress, method, signal);
-  if (result.exitCode !== 0) throw new Error(`Ticket getter failed (${result.exitCode})`);
-  const stack = result.stack;
-  const ownerItem = gameType === 'BALL' ? stack[1] : stack[3];
-  const owner = stackAddress(ownerItem);
+  let ticket: OnChainTicket | null = null;
+  let owner: ReturnType<typeof stackAddress> = null;
+  if (gameType === 'BALL') {
+    // V5 `getTicketData()` first, legacy `getTicketInfo()` only for old rounds.
+    try {
+      const result = await runGetter(ticketAddress, 'getTicketData', signal);
+      if (result.exitCode === 0) {
+        owner = stackAddress(result.stack[2]);
+        ticket = parseBallTicketV5(ticketAddress, result.stack);
+      }
+    } catch {
+      ticket = null;
+    }
+    if (ticket === null) {
+      const legacy = await runGetter(ticketAddress, 'getTicketInfo', signal);
+      if (legacy.exitCode !== 0) throw new Error(`Ticket getter failed (${legacy.exitCode})`);
+      owner = stackAddress(legacy.stack[1]);
+      ticket = parseBallTicketLegacy(ticketAddress, legacy.stack);
+    }
+  } else {
+    const result = await runGetter(ticketAddress, 'get_ticket_info', signal);
+    if (result.exitCode !== 0) throw new Error(`Ticket getter failed (${result.exitCode})`);
+    owner = stackAddress(result.stack[3]);
+    ticket = parseHundredKTicket(ticketAddress, result.stack);
+  }
   if (owner === null) throw new Error('Ticket is not minted');
   if (expectedOwner && !sameAddress(owner.toString(), expectedOwner)) {
     throw new Error('Ticket owner mismatch');
   }
-  const ticket = gameType === 'BALL' ? parseBallTicket(ticketAddress, stack) : parseHundredKTicket(ticketAddress, stack);
   if (ticket === null) throw new Error('Malformed ticket getter response');
   return ticket;
 }
@@ -414,30 +487,26 @@ async function readTicketWithRetry(
 }
 
 /**
- * Discovers the connected wallet's FRO4A SBTs entirely in the browser.
+ * Discovers the connected wallet's V5 tickets entirely in the browser.
  *
- * Three independent sources are merged:
- *   1. TonAPI NFT index (`/accounts/{wallet}/nfts`) — self-activates if the
- *      contracts ever expose the TEP-62 collection getters.
- *   2. Deterministic draw-history scan filtered by the wallet's quota shard —
- *      the reliable path today (the SBTs are not indexed as NFTs).
- *   3. Wallet transaction traces — fallback when the draw history is unreachable.
+ * Two independent sources are merged:
+ *   1. The wallet's own BuyTicket payloads -> deterministic BALL `BallTicket`
+ *      addresses (no token index, no collection getters).
+ *   2. Deterministic draw-history scan filtered by the wallet's quota shard.
  *
- * Every candidate is finally verified with the live ticket getter, including the
- * owner check, so a duplicate mint attempt against somebody else's ticket is
- * rejected instead of being displayed.
+ * Wallet transaction traces remain a last-resort fallback when the draw history is
+ * unreachable. Every candidate is finally verified with the live ticket getter,
+ * including the owner check, so a duplicate mint attempt against somebody else's
+ * ticket is rejected instead of being displayed.
  */
 export async function discoverUserTickets(
   wallet: string,
   knownDraws: KnownDraw[],
   signal?: AbortSignal,
 ): Promise<TicketView[]> {
-  const [nftCandidates, ballFromWallet] = await Promise.all([
-    fetchAccountNfts(wallet, signal)
-      .then((nfts) => matchNftCandidates(nfts, knownDraws))
-      .catch(() => [] as TicketCandidate[]),
-    discoverBallTicketsFromWallet(wallet, knownDraws, signal).catch(() => [] as TicketCandidate[]),
-  ]);
+  const ballFromWallet = await discoverBallTicketsFromWallet(wallet, knownDraws, signal).catch(
+    () => [] as TicketCandidate[],
+  );
 
   // BALL is fully derivable from the wallet's own BuyTicket payloads. The draw
   // history scan is still needed for 100K (its ticket number is assigned on-chain)
@@ -449,13 +518,13 @@ export async function discoverUserTickets(
   );
 
   let chainCandidates = mergeTicketCandidates([...ballFromWallet, ...quotaCandidates]);
-  if (nftCandidates.length === 0 && chainCandidates.length === 0 && knownDraws.length > 0) {
+  if (chainCandidates.length === 0 && knownDraws.length > 0) {
     chainCandidates = await discoverTicketsFromTraces(wallet, knownDraws, signal).catch(
       () => [] as TicketCandidate[],
     );
   }
 
-  const candidates = mergeTicketCandidates([...nftCandidates, ...chainCandidates]);
+  const candidates = mergeTicketCandidates(chainCandidates);
   const tickets = await mapWithConcurrency(candidates, 4, async (candidate) => {
     const draw = candidate.draw;
     const ticket = await readTicketWithRetry(draw.gameType, candidate.ticketAddress, wallet, signal);
@@ -485,6 +554,7 @@ export async function discoverUserTickets(
       category,
       place,
       payoutNano,
+      tier: category,
       result: computeTicketResult(ticket.status, resolvedDraw.status, isWinner, resolvedDraw.expiryTimestamp),
       drawStatus: resolvedDraw.status,
       matchedWhites: matches.matchedWhites,

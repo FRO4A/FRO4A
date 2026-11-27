@@ -8,6 +8,8 @@ import { useApiResource } from '../hooks/useApiResource';
 import { fetchCurrentDraw, fetchHistory, fetchVerification } from '../services/api';
 import { ACTIVE_DEPLOYMENTS, tonviewerAddressUrl } from '../config/deployments';
 import { safeExternalUrl } from '../utils/externalUrl';
+import { isPendingRound } from '../utils/roundState';
+import { WaitingForRoundCard } from '../components/WaitingForRoundCard';
 import { drawStatusKey } from '../utils/status';
 import { verifyVrf, type VerificationResult } from '../services/vrfVerifier';
 import { formatTonFromNano } from '../utils/format';
@@ -136,15 +138,22 @@ function GameVerifier({
     };
   }, []);
 
+  const pendingRound = active.data !== null && isPendingRound(active.data);
+
   // The active draw is the most reliable source for `latestRoundId` even when
-  // the history response omits a past round or fails entirely.
+  // the history response omits a past round or fails entirely. A pending
+  // zero-round payload never contributes a fake Round #1.
   const latestRoundId = useMemo(
     () =>
-      latestKnownRoundId([
-        active.data === null ? null : { roundId: active.data.roundId, status: active.data.status },
-        ...(history.data?.items ?? []).map((item) => ({ roundId: item.roundId, status: item.status })),
-      ]),
-    [active.data, history.data],
+      pendingRound
+        ? latestKnownRoundId([
+            ...(history.data?.items ?? []).map((item) => ({ roundId: item.roundId, status: item.status })),
+          ])
+        : latestKnownRoundId([
+            active.data === null ? null : { roundId: active.data.roundId, status: active.data.status },
+            ...(history.data?.items ?? []).map((item) => ({ roundId: item.roundId, status: item.status })),
+          ]),
+    [active.data, history.data, pendingRound],
   );
 
   // Full `[latest .. 1]` list: completed round #1 stays selectable while #2 runs.
@@ -156,23 +165,26 @@ function GameVerifier({
           status: item.status,
           winnerCount: item.winnerCount,
         })),
-        active: active.data === null ? null : { roundId: active.data.roundId, status: active.data.status },
+        active:
+          active.data === null || pendingRound
+            ? null
+            : { roundId: active.data.roundId, status: active.data.status },
         latestRoundId,
         selectedRoundId: Number.parseInt(roundId, 10) || null,
       }),
-    [history.data, active.data, latestRoundId, roundId],
+    [history.data, active.data, latestRoundId, roundId, pendingRound],
   );
 
   // Auto-select the newest verifiable round as soon as one round source answers;
   // the synthesized list makes Round #1 available even before history settles.
   useEffect(() => {
-    if (roundId !== '') return;
-    const hasRoundData = active.data !== null || history.data !== null;
+    if (roundId !== '' || pendingRound) return;
+    const hasRoundData = (active.data !== null && !pendingRound) || history.data !== null;
     const bothSettled = !active.loading && !history.loading;
     if (!hasRoundData && !bothSettled) return;
     const next = pickDefaultVerifierRound(rounds, latestRoundId);
     if (next !== null) setRoundId(String(next));
-  }, [roundId, rounds, latestRoundId, history.data, history.loading, active.data, active.loading]);
+  }, [roundId, rounds, latestRoundId, history.data, history.loading, active.data, active.loading, pendingRound]);
 
   const run = (source: FormState, published: VerifyResponse | null): void => {
     setError(null);
@@ -286,6 +298,16 @@ function GameVerifier({
   const selectedPending =
     selectedRound !== null && selectedRound.status !== null && !isVerifiableRoundStatus(selectedRound.status);
   const noRounds = rounds.length === 0 && history.data !== null && active.data !== null;
+
+  // Zero-round startup: a clean Liquid Glass waiting card instead of an empty
+  // selector / error while the Admin has not launched Round #1 yet.
+  if (pendingRound && (history.data?.items.length ?? 0) === 0) {
+    return (
+      <div className="space-y-4">
+        <WaitingForRoundCard gameLabel={gameType} onRefresh={refreshRounds} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

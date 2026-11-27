@@ -188,8 +188,7 @@ export type RandomSource = () => number;
  *
  *   count × (ticketBody + companyFee)
  * + BATCH_BASE_GAS (0.08 TON flat, never scales with count)
- * + count × MINT_VALUE (0.06 TON mint funding, excess refunded with
- *   `OwnershipAssigned`)
+ * + count × MINT_VALUE (0.06 TON mint funding, excess refunded automatically)
  *
  * Prices always come from the API / on-chain `getBuyQuote`; only the two gas
  * constants use the protocol defaults.

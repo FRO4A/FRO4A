@@ -56,13 +56,36 @@ export type DrawAddressReader = (
 
 /** Immutable factory address from the repository-controlled manifest. */
 export function factoryAddressFor(gameType: GameType): string {
-  return gameType === 'BALL' ? ACTIVE_DEPLOYMENTS.ballFactory : ACTIVE_DEPLOYMENTS.draw100kFactory;
+  const address = gameType === 'BALL' ? ACTIVE_DEPLOYMENTS.ballFactory : ACTIVE_DEPLOYMENTS.draw100kFactory;
+  if (address.trim().length === 0) {
+    throw new DrawAddressSecurityError(
+      UNVERIFIABLE_DRAW_ADDRESS,
+      `Cannot verify ${gameType}: the canonical factory address is not configured for the active network`,
+    );
+  }
+  return address;
 }
 
 /** Round-1 draw address committed in the repository manifest (offline anchor). */
 export function manifestDrawAddressFor(gameType: GameType, roundId: number): string | null {
   if (roundId !== 1) return null;
-  return gameType === 'BALL' ? ACTIVE_DEPLOYMENTS.ballDrawRound1 : ACTIVE_DEPLOYMENTS.draw100kRound1;
+  const address = gameType === 'BALL' ? ACTIVE_DEPLOYMENTS.ballDrawRound1 : ACTIVE_DEPLOYMENTS.draw100kRound1;
+  return address.trim().length > 0 ? address : null;
+}
+
+/**
+ * Admin factory-call guard: a round launch must target ONLY the pinned canonical
+ * factory of the active network — never an API- or user-supplied address.
+ */
+export function assertCanonicalFactoryTarget(gameType: GameType, target: string): string {
+  const canonical = factoryAddressFor(gameType);
+  if (!sameAddress(target, canonical)) {
+    throw new DrawAddressSecurityError(
+      UNTRUSTED_DRAW_ADDRESS,
+      `Blocked admin transaction: ${gameType} factory target ${target} is not the canonical factory ${canonical}`,
+    );
+  }
+  return canonical;
 }
 
 /**

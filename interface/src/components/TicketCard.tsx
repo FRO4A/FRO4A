@@ -2,13 +2,30 @@ import { ExternalLink, Gift, Layers, RotateCcw } from 'lucide-react';
 import type { PackView, TicketView } from '../types/game';
 import { DRAW_STATUS, TICKET_STATUS, type TicketResult } from '../types/game';
 import { useI18n } from '../i18n';
-import { formatInteger, formatTonFromNano, pad6 } from '../utils/format';
+import { v5Copy } from '../i18n/v5Messages';
+import { decodeBallCombination, formatInteger, formatTonFromNano, pad6, toBigInt } from '../utils/format';
 import { computeTicketResult, isExpired, matchedBalls } from '../utils/ticket';
-import { BallSet, TicketNumberChip } from './ui/Ball';
+import { shortAddress } from '../utils/address';
+import { Ball, BallSet, TicketNumberChip } from './ui/Ball';
 import { Countdown } from './ui/Countdown';
 import { DrawStatusBadge, TicketResultBadge } from './ui/StatusBadge';
 import { cn } from '../utils/cn';
 import { tonviewerAddressUrl } from '../config/deployments';
+
+/** Exact 5 white + 1 red from the V5 `BallTicket` payload (packed fallback). */
+function ballNumbers(ticket: TicketView): { whites: number[] | null; red: number | null } {
+  if (ticket.gameType !== 'BALL') return { whites: null, red: null };
+  if (Array.isArray(ticket.whites) && ticket.whites.length === 5 && ticket.red !== null) {
+    return { whites: [...ticket.whites], red: ticket.red };
+  }
+  const packed = ticket.packedCombination ?? ticket.ticketKey;
+  if (typeof packed !== 'string' || packed.length === 0) return { whites: null, red: null };
+  try {
+    return decodeBallCombination(toBigInt(packed));
+  } catch {
+    return { whites: null, red: null };
+  }
+}
 
 export function TicketCard({
   ticket,
@@ -20,6 +37,7 @@ export function TicketCard({
   onAction: (ticket: TicketView, action: 'claim' | 'refund') => void;
 }): JSX.Element {
   const { locale, t } = useI18n();
+  const copy = v5Copy(locale);
   const draw = ticket.draw;
   const drawStatus = draw?.status ?? null;
   const expired = isExpired(draw?.expiryTimestamp ?? null);
@@ -40,11 +58,16 @@ export function TicketCard({
   // so the draw status decides between TALLYING / WINNER / NOT_WINNER.
   const result: TicketResult =
     ticket.result ?? computeTicketResult(ticket.status, drawStatus, isWinner, draw?.expiryTimestamp ?? null);
+  const numbers = ballNumbers(ticket);
   const matches =
     ticket.matchedWhites !== undefined || ticket.redMatched !== undefined
       ? { matchedWhites: ticket.matchedWhites ?? [], redMatched: ticket.redMatched ?? null }
-      : matchedBalls(ticket.whites, ticket.red, draw?.winningNumbers ?? null);
-  const hasResult = draw?.winningNumbers !== null && draw?.winningNumbers !== undefined;
+      : matchedBalls(numbers.whites, numbers.red, draw?.winningNumbers ?? null);
+  const hasResult =
+    (draw?.winningNumbers !== null && draw?.winningNumbers !== undefined) ||
+    (ticket.matchedWhites?.length ?? 0) > 0 ||
+    ticket.redMatched === true ||
+    ticket.redMatched === false;
   const winnerCount =
     draw?.winnerCount ?? draw?.categories.reduce((sum, category) => sum + category.winners, 0) ?? 0;
 
@@ -53,64 +76,102 @@ export function TicketCard({
       ? draw.categories.find((category) => category.category === ticket.category) ?? null
       : null;
   const payoutNano = ticket.payoutNano ?? categoryBudget?.payoutPerTicket.nanotons ?? null;
-  const canClaim =
-    drawStatus === DRAW_STATUS.CLAIM_OPEN && isWinner && ticket.status !== TICKET_STATUS.CLAIMED && !expired;
+  const claimed = ticket.claimed === true || ticket.status === TICKET_STATUS.CLAIMED;
   const canRefund =
     drawStatus === DRAW_STATUS.CANCELLED && ticket.status !== TICKET_STATUS.REFUNDED && !expired;
+  const canClaim =
+    drawStatus === DRAW_STATUS.CLAIM_OPEN &&
+    isWinner &&
+    ticket.status !== TICKET_STATUS.CLAIMED &&
+    !claimed &&
+    !expired;
+
+  // Exact V5 ticket status (Active / Tallying / Winner / Not won / Refundable / Claimed).
+  const exactStatus: { label: string; tone: string; code: string } = claimed
+    ? { label: copy.ticketClaimed, tone: 'pill-neutral', code: 'CLAIMED' }
+    : ticket.status === TICKET_STATUS.REFUNDED
+      ? { label: t('tickets.refundedBadge'), tone: 'pill-danger', code: 'REFUNDED' }
+      : result === 'TALLYING'
+        ? { label: copy.ticketTallying, tone: 'pill-warning', code: 'TALLYING' }
+        : result === 'WINNER'
+          ? { label: copy.ticketWinner, tone: 'pill-success', code: 'WINNER' }
+          : result === 'NOT_WINNER'
+            ? { label: copy.ticketNotWon, tone: 'pill-neutral', code: 'NOT_WON' }
+            : canRefund
+              ? { label: copy.ticketRefundable, tone: 'pill-danger', code: 'REFUNDABLE' }
+              : result === 'CANCELLED'
+                ? { label: t('common.expired'), tone: 'pill-neutral', code: 'EXPIRED' }
+                : result === 'PENDING'
+                ? { label: copy.ticketTallying, tone: 'pill-warning', code: 'TALLYING' }
+                : result === 'EXPIRED'
+                  ? { label: t('common.expired'), tone: 'pill-neutral', code: 'EXPIRED' }
+                  : { label: copy.ticketActive, tone: 'pill-success', code: 'ACTIVE' };
 
   const actionKey = (action: 'claim' | 'refund'): string => `${ticket.ticketAddress}:${action}`;
+  const explorerUrl = tonviewerAddressUrl(ticket.ticketAddress);
 
   return (
-    <div className="glass-nested p-3.5">
-      <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+    <div
+      className="glass p-4"
+      data-testid="ball-ticket-card"
+      data-game={ticket.gameType}
+      data-result={result}
+    >
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="pill pill-accent">{ticket.gameType}</span>
-          <span className="text-sm font-semibold text-[var(--text-primary)]">
-            {t('common.round')} #{ticket.roundId}
+          <span className="pill pill-neutral">{ticket.gameType}</span>
+          <span className="pill pill-neutral tabular">{t('common.round')} #{ticket.roundId}</span>
+          <span className={cn('pill', exactStatus.tone)} data-testid="ticket-status" data-status={exactStatus.code}>
+            {exactStatus.label}
           </span>
           {drawStatus !== null ? <DrawStatusBadge status={drawStatus} /> : null}
-          <TicketResultBadge result={result} />
         </div>
-        <a
-          href={tonviewerAddressUrl(ticket.ticketAddress)}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="text-[var(--text-muted)] hover:text-[var(--accent)]"
-          aria-label={t('common.viewExplorer')}
-        >
-          <ExternalLink size={15} strokeWidth={1.75} />
-        </a>
+        {explorerUrl.length > 0 ? (
+          <a
+            href={explorerUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            aria-label={t('common.viewExplorer')}
+          >
+            <ExternalLink size={15} strokeWidth={1.75} />
+          </a>
+        ) : null}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-[1.2fr_1fr]">
         <div>
           <div className="stat-label mb-1">{t('tickets.yourNumbers')}</div>
-          {ticket.gameType === 'BALL' && ticket.whites && ticket.red !== null ? (
-            <BallSet
-              whites={ticket.whites}
-              red={ticket.red}
-              size="sm"
-              matchedWhites={hasResult ? matches.matchedWhites : undefined}
-              redMatched={hasResult ? matches.redMatched : undefined}
-            />
+          {numbers.whites && numbers.red !== null ? (
+            <div className="flex flex-wrap items-center gap-1.5" data-testid="ball-ticket-numbers">
+              {/* Exactly 5 white balls (1–69) from on-chain BallTicket data. */}
+              {numbers.whites.map((white) => (
+                <Ball
+                  key={`white-${white}`}
+                  value={white}
+                  size="sm"
+                  matched={hasResult && matches.matchedWhites.includes(white)}
+                />
+              ))}
+              <span className="mx-0.5 h-6 w-px bg-[var(--hairline-strong)]" aria-hidden="true" />
+              {/* Exactly 1 ruby red ball (1–26). */}
+              <Ball
+                value={numbers.red}
+                red
+                size="sm"
+                matched={hasResult && matches.redMatched === true}
+              />
+            </div>
           ) : (
             <TicketNumberChip number={ticket.ticketKey} />
           )}
-          {ticket.gameType === 'BALL' && ticket.nftImageUrl ? (
-            <img
-              src={ticket.nftImageUrl}
-              alt=""
-              loading="lazy"
-              className="mt-2 h-28 w-28 rounded-2xl border border-[var(--hairline)] object-cover"
-            />
-          ) : null}
           {draw?.winningNumbers ? (
             <div className="mt-2">
               <div className="stat-label mb-1">{t('tickets.winningNumbers')}</div>
               <BallSet whites={draw.winningNumbers.whites} red={draw.winningNumbers.red} size="sm" />
             </div>
           ) : null}
-          {hasResult && ticket.gameType === 'BALL' ? (
+          {hasResult ? (
             <div className="mt-1.5 text-[11px] text-[var(--text-muted)]">
               {t('tickets.matchedLabel')}:{' '}
               <span className="font-semibold tabular text-[var(--text-primary)]">
@@ -219,6 +280,20 @@ export function TicketCard({
         </div>
       </div>
 
+      {explorerUrl.length > 0 ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-muted)]">
+          <span>{copy.ticketAddressLabel}</span>
+          <a
+            href={explorerUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="code break-all text-[var(--text-secondary)] underline decoration-[var(--hairline-strong)] underline-offset-2 hover:text-[var(--text-primary)]"
+          >
+            {shortAddress(ticket.ticketAddress, 10, 10)}
+          </a>
+        </div>
+      ) : null}
+
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {canClaim ? (
           <button
@@ -228,7 +303,7 @@ export function TicketCard({
             onClick={() => onAction(ticket, 'claim')}
           >
             <Gift size={15} strokeWidth={1.75} />
-            {pendingAction === actionKey('claim') ? t('common.loading') : t('tickets.claimButton')}
+            {pendingAction === actionKey('claim') ? t('common.loading') : copy.claimOpcode}
           </button>
         ) : null}
         {canRefund ? (
@@ -239,7 +314,7 @@ export function TicketCard({
             onClick={() => onAction(ticket, 'refund')}
           >
             <RotateCcw size={15} strokeWidth={1.75} />
-            {pendingAction === actionKey('refund') ? t('common.loading') : t('tickets.refundButton')}
+            {pendingAction === actionKey('refund') ? t('common.loading') : copy.refundOpcode}
           </button>
         ) : null}
         {ticket.status === TICKET_STATUS.CLAIMED ? <span className="pill pill-success">{t('tickets.claimedBadge')}</span> : null}

@@ -3,8 +3,8 @@
  *
  * Some opcode values are shared between the games, others are deliberately
  * different. The two ticket contracts are the important asymmetry:
- *   BALL BallTicketSBT: Claim 0x3008, Refund 0x3009
- *   100K Ticket100kSBT: Claim 0x3011, Refund 0x3012
+ *   BALL BallTicket (V5 receipt): Claim 0x3008, Refund 0x3009
+ *   100K Ticket100kPack:          Claim 0x3011, Refund 0x3012
  */
 export const OPCODES = {
   BuyTicket: 0x1001,

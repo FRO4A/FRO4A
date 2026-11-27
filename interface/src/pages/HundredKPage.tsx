@@ -5,17 +5,21 @@ import { PROTOCOL_LIMITS } from '../types/game';
 import { useI18n } from '../i18n';
 import { useApiResource } from '../hooks/useApiResource';
 import { useRole } from '../hooks/useRole';
+import { useTonNetworkGuard } from '../hooks/useTonNetworkGuard';
 import { useWalletQuota } from '../hooks/useWalletQuota';
 import { fetchCurrentDraw, fetchHistory } from '../services/api';
 import { readUserQuota } from '../services/quota';
 import { ACTIVE_DEPLOYMENTS } from '../config/deployments';
+import { isPendingRound } from '../utils/roundState';
 import { formatInteger, formatTon } from '../utils/format';
 import { AdminForceStartCard } from '../components/AdminForceStartCard';
+import { AdminLaunchRoundCard } from '../components/AdminLaunchRoundCard';
 import { AdminPanel } from '../components/AdminPanel';
 import { ArchiveTable } from '../components/ArchiveTable';
 import { HundredKPlaceTable } from '../components/HundredKPlaceTable';
 import { HundredKPurchasePanel } from '../components/HundredKPurchasePanel';
 import { RoleNotice } from '../components/RoleNotice';
+import { WaitingForRoundCard } from '../components/WaitingForRoundCard';
 import { Countdown } from '../components/ui/Countdown';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { DrawStatusBadge } from '../components/ui/StatusBadge';
@@ -53,6 +57,9 @@ export function HundredKPage({ navigate }: { navigate: (route: AppRoute) => void
     draw?.adminAddress ?? ACTIVE_DEPLOYMENTS.adminAddress,
     draw?.treasuryAddress ?? ACTIVE_DEPLOYMENTS.treasuryAddress,
   );
+  const networkGuard = useTonNetworkGuard();
+  // Strict admin UI: the ADMIN address AND the expected TON chain are required.
+  const isAdmin = role === 'ADMIN' && !networkGuard.wrongNetwork;
 
   const refreshAll = (): void => {
     current.refresh();
@@ -74,8 +81,24 @@ export function HundredKPage({ navigate }: { navigate: (route: AppRoute) => void
     return <ErrorState body={t('errors.api')} onRetry={current.refresh} />;
   }
 
-  if (!draw) {
-    return <ErrorState body={t('overview.noCurrentRound')} onRetry={current.refresh} />;
+  if (!draw || isPendingRound(draw)) {
+    return (
+      <div className="space-y-5">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{t('hundredK.title')}</h1>
+          <p className="mt-1 max-w-2xl text-sm text-secondary">{t('hundredK.subtitle')}</p>
+        </div>
+        <WaitingForRoundCard gameLabel="100K" onRefresh={refreshAll}>
+          {isAdmin ? (
+            <AdminLaunchRoundCard
+              gameType="100K"
+              factoryAddress={ACTIVE_DEPLOYMENTS.draw100kFactory}
+              onDone={refreshAll}
+            />
+          ) : null}
+        </WaitingForRoundCard>
+      </div>
+    );
   }
 
   const hardCap = draw.hardCap ?? PROTOCOL_LIMITS.HARD_CAP_100K;
@@ -178,7 +201,7 @@ export function HundredKPage({ navigate }: { navigate: (route: AppRoute) => void
         ) : null}
       </section>
 
-      {role === 'ADMIN' ? (
+      {isAdmin ? (
         <>
           <AdminForceStartCard gameType="100K" draw={draw} onDone={refreshAll} />
           <AdminPanel

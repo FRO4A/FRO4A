@@ -16,7 +16,7 @@ export const DRAW_STATUS = {
   CANCELLED: 5,
 } as const;
 
-/** Unified TicketSBT status codes (protocol-standard.md §3). */
+/** Unified ticket status codes (protocol-standard.md §3). */
 export const TICKET_STATUS = {
   ACTIVE: 0,
   PENDING: 1,
@@ -140,8 +140,12 @@ export interface OnChainTicket {
   ticketAddress: string;
   drawAddress: string;
   roundId: number;
+  /** Public wallet that owns this on-chain ticket. */
+  owner?: string | null;
   /** BALL: packed combination (decimal). 100K: ticket number (decimal). */
   ticketKey: string;
+  /** V5 `BallTicket` packed combination (decimal string), `null` for 100K. */
+  packedCombination?: string | null;
   displayValue: string;
   whites: number[] | null;
   red: number | null;
@@ -153,11 +157,15 @@ export interface OnChainTicket {
   /** Draw-aware result computed by the server mirror or client-side comparison. */
   result?: TicketResult;
   drawStatus?: number | null;
+  /** Winning tier (BALL category 1..8) when the ticket won, else null. */
+  tier?: number | null;
+  /** V5 `TicketData.tallied` — the draw tallied this ticket. */
+  tallied?: boolean;
+  /** V5 `TicketData.claimed` — the prize was already paid out. */
+  claimed?: boolean;
   /** Whites of this ticket matching the drawn winning whites. */
   matchedWhites?: number[];
   redMatched?: boolean | null;
-  /** BALL TEP-64 image path (`/api/nft/ball/<roundId>/<packed>.png`). */
-  nftImageUrl?: string | null;
   /** 100K V4 pack (present instead of per-ticket contracts). */
   pack?: PackView | null;
 }

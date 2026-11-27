@@ -52,6 +52,12 @@ jobs:
 
       - name: Build interface
         working-directory: interface
+        # The published Pages bundle is the MAINNET V5 interface: both canonical
+        # factories are wired in src/config/mainnetDeployment.ts (public
+        # addresses only). VITE_TONAPI_BASE_URL is the public Mainnet TON API.
+        env:
+          VITE_NETWORK: mainnet
+          VITE_TONAPI_BASE_URL: https://tonapi.io/v2
         run: npm run build
 
       - name: Setup Pages

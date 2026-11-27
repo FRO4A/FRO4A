@@ -6,17 +6,21 @@ import type { WinningNumbersView } from '../types/api';
 import { useI18n } from '../i18n';
 import { useApiResource } from '../hooks/useApiResource';
 import { useRole } from '../hooks/useRole';
+import { useTonNetworkGuard } from '../hooks/useTonNetworkGuard';
 import { useWalletQuota } from '../hooks/useWalletQuota';
 import { fetchCurrentDraw, fetchHistory, fetchTakenCombinations } from '../services/api';
 import { readUserQuota } from '../services/quota';
 import { ACTIVE_DEPLOYMENTS } from '../config/deployments';
+import { isPendingRound } from '../utils/roundState';
 import { formatInteger, formatTon } from '../utils/format';
 import { AdminForceStartCard } from '../components/AdminForceStartCard';
+import { AdminLaunchRoundCard } from '../components/AdminLaunchRoundCard';
 import { AdminPanel } from '../components/AdminPanel';
 import { BallPrizeTable } from '../components/BallPrizeTable';
 import { BallPurchasePanel } from '../components/BallPurchasePanel';
 import { ArchiveTable } from '../components/ArchiveTable';
 import { RoleNotice } from '../components/RoleNotice';
+import { WaitingForRoundCard } from '../components/WaitingForRoundCard';
 import { BallSet } from '../components/ui/Ball';
 import { Countdown } from '../components/ui/Countdown';
 import { ProgressBar } from '../components/ui/ProgressBar';
@@ -61,6 +65,9 @@ export function BallPage({ navigate }: { navigate: (route: AppRoute) => void }):
     draw?.adminAddress ?? ACTIVE_DEPLOYMENTS.adminAddress,
     draw?.treasuryAddress ?? ACTIVE_DEPLOYMENTS.treasuryAddress,
   );
+  const networkGuard = useTonNetworkGuard();
+  // Strict admin UI: the ADMIN address AND the expected TON chain are required.
+  const isAdmin = role === 'ADMIN' && !networkGuard.wrongNetwork;
 
   // Result panel: the CURRENT draw once the VRF landed (TALLYING / CLAIM_OPEN), or
   // the most recent finished round from the archive when round N+1 already started.
@@ -88,8 +95,24 @@ export function BallPage({ navigate }: { navigate: (route: AppRoute) => void }):
     return <ErrorState body={t('errors.api')} onRetry={current.refresh} />;
   }
 
-  if (!draw) {
-    return <ErrorState body={t('overview.noCurrentRound')} onRetry={current.refresh} />;
+  if (!draw || isPendingRound(draw)) {
+    return (
+      <div className="space-y-5">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{t('ball.title')}</h1>
+          <p className="mt-1 max-w-2xl text-sm text-secondary">{t('ball.subtitle')}</p>
+        </div>
+        <WaitingForRoundCard gameLabel="BALL" onRefresh={refreshAll}>
+          {isAdmin ? (
+            <AdminLaunchRoundCard
+              gameType="BALL"
+              factoryAddress={ACTIVE_DEPLOYMENTS.ballFactory}
+              onDone={refreshAll}
+            />
+          ) : null}
+        </WaitingForRoundCard>
+      </div>
+    );
   }
 
   return (
@@ -222,7 +245,7 @@ export function BallPage({ navigate }: { navigate: (route: AppRoute) => void }):
         />
       ) : null}
 
-      {role === 'ADMIN' ? (
+      {isAdmin ? (
         <>
           <AdminForceStartCard gameType="BALL" draw={draw} onDone={refreshAll} />
           <AdminPanel

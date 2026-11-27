@@ -4,6 +4,7 @@ import { useTelegramShell } from '../hooks/useTelegram';
 import { Header } from './Header';
 import { BottomDock } from './BottomDock';
 import { MountainBackground } from './MountainBackground';
+import { WrongNetworkBanner } from './WrongNetworkBanner';
 
 export function AppShell({
   route,
@@ -20,6 +21,7 @@ export function AppShell({
       <MountainBackground />
       <Header navigate={navigate} />
       <main className="mx-auto w-full max-w-content flex-1 px-4 pb-28 pt-2 sm:px-6 sm:pb-32">
+        <WrongNetworkBanner />
         <div key={route} className="fade-in">
           {children}
         </div>

@@ -51,20 +51,6 @@ export interface TonApiRunResponse {
   gasUsed: number;
 }
 
-export interface TonApiNftItem {
-  address: string;
-  index?: string | number;
-  owner?: { address?: string } | null;
-  collection?: { address?: string; name?: string } | null;
-  metadata?: { name?: string; description?: string } | null;
-  content?: { uri?: string };
-  previews?: Array<{ resolution?: string; url?: string }>;
-}
-
-interface TonApiNftList {
-  nft_items?: TonApiNftItem[];
-}
-
 function headers(): Record<string, string> {
   const result: Record<string, string> = { accept: 'application/json' };
   if (TONAPI_KEY.length > 0) result.authorization = `Bearer ${TONAPI_KEY}`;
@@ -99,7 +85,7 @@ async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
  *
  * TonAPI accepts getter arguments as a comma-separated list of decimal integers
  * (`?args=123,456`). This is used by the BALL duplicate guard:
- *   BallDrawInstance.getTicketAddress(packedCombination) -> deterministic SBT address
+ *   BallDrawInstance.getTicketAddress(packedCombination) -> deterministic BallTicket address
  */
 export async function runGetter(
   address: string,
@@ -116,12 +102,6 @@ export async function runGetter(
   const stack = Array.isArray(payload.stack) ? payload.stack : [];
   const exitCode = typeof payload.exit_code === 'number' ? payload.exit_code : (payload.exitCode ?? 0);
   return { stack, exitCode, gasUsed: payload.gas_used ?? 0 };
-}
-
-export async function fetchAccountNfts(wallet: string, signal?: AbortSignal): Promise<TonApiNftItem[]> {
-  const url = `${TONAPI_BASE_URL}/accounts/${encodeURIComponent(wallet)}/nfts?limit=1000&offset=0&indirect_ownership=true`;
-  const payload = await fetchJson<TonApiNftList>(url, signal);
-  return Array.isArray(payload.nft_items) ? payload.nft_items : [];
 }
 
 /** Subset of a TonAPI message used by the client-side ticket discovery. */
@@ -182,8 +162,8 @@ export interface TonApiAccountState {
 
 /**
  * Account state (`active`, `uninit`, `frozen`, `nonexistent`). A deterministic
- * SBT address that was never minted reports `uninit` — or is absent with HTTP 404 —
- * which is exactly what the BALL duplicate guard needs.
+ * V5 BallTicket address that was never minted reports `uninit` — or is absent
+ * with HTTP 404 — which is exactly what the BALL duplicate guard needs.
  *
  * Returns `null` when TonAPI has no account entity (never deployed).
  */

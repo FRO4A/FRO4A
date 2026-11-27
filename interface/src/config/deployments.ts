@@ -1,4 +1,11 @@
 import type { Deployments } from '../types/deployments';
+import {
+  isConfiguredAddress,
+  isMainnetFactoryConfigured,
+  MAINNET_DEPLOYMENT,
+  missingMainnetFactories,
+  type MainnetDeploymentManifest,
+} from './mainnetDeployment';
 
 /**
  * Read-only mirror of `shared/deployments/testnet.json`.
@@ -9,7 +16,7 @@ import type { Deployments } from '../types/deployments';
  */
 export const TESTNET_DEPLOYMENTS: Deployments = {
   network: 'testnet',
-  version: 'v4',
+  version: 'v5',
   adminAddress: 'EQDeLewjWId6lshlusHxHXvJTlG2dM_tXdyKzqzW5SsiBs5d',
   treasuryAddress: 'EQBRJRTzsjEmzTWSuhNanPoakap16p-hQGW1G3R_WVhWxzzd',
   vrfPublicKey: '95dc46c710a37024bbfc4e6c9bb03d88b0240de8de56c4fd6627bc1f8ffe3086',
@@ -19,7 +26,6 @@ export const TESTNET_DEPLOYMENTS: Deployments = {
   draw100kRound1: 'EQCwV2WQRwVyd0XH4jUiNaoe0zpSW1-72VhumeRzaNXE13Gf',
   ball: {
     tallyDuration: 120,
-    nftBaseUrl: 'https://zoophoric-rihanna-solvently.ngrok-free.dev',
     maxBatchSize: 12,
     batchBaseGas: '80000000',
     mintValue: '60000000',
@@ -50,13 +56,139 @@ export const TESTNET_DEPLOYMENTS: Deployments = {
 };
 
 /**
- * Label-only network switch. The FRO4A deployment currently exists exclusively
- * on TON Testnet, so `ACTIVE_DEPLOYMENTS`, the public TON API and every explorer
- * link below are pinned to Testnet regardless of this value.
+ * Real network switch driven exclusively by `VITE_NETWORK` (`mainnet` | `testnet`).
+ *
+ * Everything network-dependent is derived from this value:
+ *   - `ACTIVE_DEPLOYMENTS` (canonical V5 Mainnet factories vs Testnet manifest)
+ *   - `TONAPI_BASE_URL` (`tonapi.io/v2` vs `testnet.tonapi.io/v2`)
+ *   - `TONVIEWER_BASE` (`tonviewer.com` vs `testnet.tonviewer.com`)
+ *   - `EXPECTED_TON_CHAIN_ID` (`-239` vs `-3`) for the TON Connect guard.
  */
-export const NETWORK = (import.meta.env.VITE_NETWORK ?? 'testnet').toLowerCase() === 'mainnet' ? 'mainnet' : 'testnet';
+export type NetworkName = 'mainnet' | 'testnet';
 
-export const ACTIVE_DEPLOYMENTS: Deployments = TESTNET_DEPLOYMENTS;
+export const NETWORK: NetworkName =
+  (import.meta.env.VITE_NETWORK ?? 'testnet').trim().toLowerCase() === 'mainnet' ? 'mainnet' : 'testnet';
+
+/**
+ * Public-only view of the Mainnet manifest. `null` factory addresses become `''`
+ * so the UI has no ambiguous "undefined" state; `assertActiveNetworkReady`
+ * fails closed before any transaction is built.
+ */
+export function buildMainnetDeployments(manifest: MainnetDeploymentManifest): Deployments {
+  const ballPricing = manifest.pricing.ball;
+  const hundredPricing = manifest.pricing['100k'];
+  return {
+    network: 'mainnet',
+    version: manifest.version,
+    adminAddress: manifest.adminAddress ?? '',
+    treasuryAddress: manifest.treasuryAddress ?? '',
+    vrfPublicKey: manifest.vrfPublicKey ?? '',
+    ballFactory: manifest.ballFactory ?? '',
+    ballDrawRound1: manifest.ballDrawRound1 ?? '',
+    draw100kFactory: manifest.draw100kFactory ?? '',
+    draw100kRound1: manifest.draw100kRound1 ?? '',
+    ball: manifest.ball ?? undefined,
+    hundredK: manifest.hundredK ?? undefined,
+    pricing: {
+      ball: ballPricing ?? {
+        ticketBody: '2000000000',
+        companyFee: '200000000',
+        ticketPrice: '2200000000',
+        minBuyValue: '3000000000',
+        minStorageReserve: '2000000000',
+      },
+      '100k': hundredPricing ?? {
+        ticketBody: '1000000000',
+        companyFee: '100000000',
+        ticketPrice: '1100000000',
+        minBuyValue: '1900000000',
+        minStorageReserve: '2000000000',
+      },
+    },
+    deployedAt: manifest.deployedAt ?? '',
+  };
+}
+
+/** Canonical V5 Mainnet deployment (placeholder `null` factories before Step 4). */
+export const MAINNET_DEPLOYMENTS: Deployments = buildMainnetDeployments(MAINNET_DEPLOYMENT);
+
+export const ACTIVE_DEPLOYMENTS: Deployments =
+  NETWORK === 'mainnet' ? MAINNET_DEPLOYMENTS : TESTNET_DEPLOYMENTS;
+
+/** TON Connect `wallet.account.chain` expected for the active app network. */
+export const EXPECTED_TON_CHAIN_ID = NETWORK === 'mainnet' ? '-239' : '-3';
+
+/** Explorer + public TON API bases for one network (pure, unit-tested). */
+export function networkEndpointsFor(network: NetworkName): {
+  tonviewerBase: string;
+  tonapiBase: string;
+  chainId: string;
+} {
+  return network === 'mainnet'
+    ? { tonviewerBase: 'https://tonviewer.com', tonapiBase: 'https://tonapi.io/v2', chainId: '-239' }
+    : {
+        tonviewerBase: 'https://testnet.tonviewer.com',
+        tonapiBase: 'https://testnet.tonapi.io/v2',
+        chainId: '-3',
+      };
+}
+
+/** Hard build/runtime guard for an undeployed Mainnet manifest. */
+export class MainnetDeploymentError extends Error {
+  constructor(
+    public readonly missing: string[],
+    message: string,
+  ) {
+    super(message);
+    this.name = 'MainnetDeploymentError';
+  }
+}
+
+/** Missing canonical factories for the active network (`[]` on Testnet). */
+export function missingActiveFactories(): string[] {
+  if (NETWORK !== 'mainnet') return [];
+  return missingMainnetFactories(MAINNET_DEPLOYMENT);
+}
+
+/** True when the active network has a canonical factory for this game. */
+export function isActiveFactoryConfigured(gameType?: 'BALL' | '100K'): boolean {
+  if (NETWORK !== 'mainnet') return true;
+  if (gameType === 'BALL') return isConfiguredAddress(MAINNET_DEPLOYMENT.ballFactory);
+  if (gameType === '100K') return isConfiguredAddress(MAINNET_DEPLOYMENT.draw100kFactory);
+  return isMainnetFactoryConfigured(MAINNET_DEPLOYMENT);
+}
+
+/**
+ * Pure fail-closed guard for a Mainnet manifest (unit-tested without env
+ * switching). Throws while any canonical factory is missing.
+ */
+export function assertMainnetManifestReady(
+  manifest: MainnetDeploymentManifest,
+  gameType?: 'BALL' | '100K',
+): void {
+  const missing = missingMainnetFactories(manifest);
+  if (missing.length > 0) {
+    throw new MainnetDeploymentError(
+      missing,
+      `Mainnet V5 is not deployed yet: missing canonical ${missing.join(' / ')}. Run the Step 4 deployment and scripts/sync-mainnet-manifest-to-interface.mjs first.`,
+    );
+  }
+  if (gameType === 'BALL' && !isConfiguredAddress(manifest.ballFactory)) {
+    throw new MainnetDeploymentError(['ballFactory'], 'Mainnet BALL factory is not configured.');
+  }
+  if (gameType === '100K' && !isConfiguredAddress(manifest.draw100kFactory)) {
+    throw new MainnetDeploymentError(['draw100kFactory'], 'Mainnet 100K factory is not configured.');
+  }
+}
+
+/**
+ * Fail-closed guard: refuses to build ANY Mainnet transaction while the canonical
+ * factory addresses are still missing. Never called for the Testnet build.
+ */
+export function assertActiveNetworkReady(gameType?: 'BALL' | '100K'): void {
+  if (NETWORK !== 'mainnet') return;
+  assertMainnetManifestReady(MAINNET_DEPLOYMENT, gameType);
+}
 
 /**
  * Empty (`VITE_API_BASE_URL=`) or `/` means same-origin relative requests.
@@ -70,17 +202,18 @@ export const ACTIVE_DEPLOYMENTS: Deployments = TESTNET_DEPLOYMENTS;
 const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').trim();
 export const API_BASE_URL = configuredApiBaseUrl === '/' ? '' : configuredApiBaseUrl.replace(/\/+$/, '');
 
-/** Public TON API — Testnet by default, never `https://tonapi.io/v2` (Mainnet). */
+/** Public TON API for the ACTIVE network (env override still supported). */
 export const TONAPI_BASE_URL = (
-  import.meta.env.VITE_TONAPI_BASE_URL ?? 'https://testnet.tonapi.io/v2'
+  import.meta.env.VITE_TONAPI_BASE_URL ?? networkEndpointsFor(NETWORK).tonapiBase
 ).replace(/\/+$/, '');
 
 export const TONAPI_KEY = import.meta.env.VITE_TONAPI_KEY ?? '';
 
-/** Explorer links always point at Testnet (`https://testnet.tonviewer.com`). */
-export const TONVIEWER_BASE = 'https://testnet.tonviewer.com';
+/** Explorer links always match the ACTIVE network. */
+export const TONVIEWER_BASE = networkEndpointsFor(NETWORK).tonviewerBase;
 
 export function tonviewerAddressUrl(address: string): string {
+  if (!isConfiguredAddress(address)) return '';
   return `${TONVIEWER_BASE}/${encodeURIComponent(address)}`;
 }
 

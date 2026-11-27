@@ -5,3 +5,8 @@ dist/
 *.log
 .DS_Store
 Thumbs.db
+
+# Mainnet secrets — local only, NEVER commit
+MAINNET_SECRETS_LOCAL.txt
+.env.mainnet
+*.env.mainnet

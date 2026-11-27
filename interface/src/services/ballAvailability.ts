@@ -4,16 +4,15 @@ import { fetchAccountState, runGetter, stackAddress } from './tonapi';
 /**
  * Hard BALL duplicate guard, verified directly on the TON blockchain.
  *
- * `BallDrawInstance` exposes `getTicketAddress(packedCombination)`, and the SBT
- * address is `contractAddress(initOf BallTicketSBT(draw, packedCombination))`.
+ * `BallDrawInstance` exposes `getTicketAddress(packedCombination)`, and the V5
+ * `BallTicket` address is `contractAddress(initOf BallTicket(draw, packed))`.
  * Therefore:
  *
  *   getTicketAddress(packed) -> account status `uninit`  => combination is FREE
  *                            -> account active + owner     => combination is TAKEN
  *
- * This is lag-free: it does not depend on the FRO4A indexer or on TonAPI's NFT
- * indexer. Verified against live Testnet: `getTicketAddress(704499257501)` returns
- * the exact SBT `0:bd74c202…` whose `getTicketInfo` reports the buyer as owner.
+ * This is lag-free: it does not depend on the FRO4A indexer or on any token index
+ * (V5 has no token layer at all).
  */
 
 export type ChainAvailability = 'available' | 'taken' | 'unknown';
@@ -23,7 +22,7 @@ export interface ChainAvailabilityResult {
   ticketAddress: string | null;
 }
 
-/** Deterministic SBT address for a packed combination (via the draw getter). */
+/** Deterministic V5 BallTicket address for a packed combination (via the draw getter). */
 export async function resolveBallTicketAddress(
   drawAddress: string,
   packed: bigint,
@@ -33,6 +32,36 @@ export async function resolveBallTicketAddress(
   if (result.exitCode !== 0) return null;
   const address = stackAddress(result.stack[0]);
   return address === null ? null : address.toString({ bounceable: true });
+}
+
+/**
+ * Owner of a deployed BallTicket.
+ *
+ * V5 getter: `getTicketData()` returns a flattened tuple
+ *   [drawAddress, roundId, owner, packedCombination, white1..5, red, tallied, claimed]
+ * A legacy `getTicketInfo()` fallback keeps older Testnet deployments readable.
+ */
+async function readBallTicketOwner(
+  ticketAddress: string,
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; owner: ReturnType<typeof stackAddress> }> {
+  try {
+    const v5 = await runGetter(ticketAddress, 'getTicketData', signal);
+    // A real V5 response has 12 stack items; a malformed/foreign response must
+    // fall through to the legacy getter instead of reporting "no owner".
+    if (v5.exitCode === 0 && v5.stack.length >= 3) {
+      return { ok: true, owner: stackAddress(v5.stack[2]) };
+    }
+  } catch {
+    // fall through to the legacy getter
+  }
+  try {
+    const legacy = await runGetter(ticketAddress, 'getTicketInfo', signal);
+    if (legacy.exitCode === 0) return { ok: true, owner: stackAddress(legacy.stack[1]) };
+  } catch {
+    // unknown ticket: caller fails closed as `unknown`
+  }
+  return { ok: false, owner: null };
 }
 
 const FREE_STATES = new Set(['uninit', 'nonexistent', 'frozen']);
@@ -55,10 +84,9 @@ export async function checkBallCombinationOnChain(
 
     // Deployed: the owner is assigned atomically by the first MintTicket, so a
     // non-null owner proves the combination is already tokenized.
-    const info = await runGetter(ticketAddress, 'getTicketInfo', signal);
-    if (info.exitCode !== 0) return { status: 'unknown', ticketAddress };
-    const owner = stackAddress(info.stack[1]);
-    return { status: owner === null ? 'available' : 'taken', ticketAddress };
+    const info = await readBallTicketOwner(ticketAddress, signal);
+    if (!info.ok) return { status: 'unknown', ticketAddress };
+    return { status: info.owner === null ? 'available' : 'taken', ticketAddress };
   } catch {
     return { status: 'unknown', ticketAddress: null };
   }

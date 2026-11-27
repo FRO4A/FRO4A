@@ -6,6 +6,7 @@ import type { GameType } from '../types/game';
 import { useI18n, type Translate } from '../i18n';
 import { buildForceStartGame } from '../services/messages';
 import { BLOCKED_TRANSACTION_MESSAGE, DrawAddressSecurityError } from '../services/drawTrust';
+import { WrongTonNetworkError } from '../services/networkGuard';
 import { sendTransaction } from '../services/tonConnect';
 import { GAS } from '../services/opcodes';
 import { cn } from '../utils/cn';
@@ -62,7 +63,7 @@ export function AdminForceStartCard({
       window.setTimeout(onDone, 5_000);
     } catch (error) {
       setStatus('error');
-      setBlocked(error instanceof DrawAddressSecurityError);
+      setBlocked(error instanceof DrawAddressSecurityError || error instanceof WrongTonNetworkError);
     }
   };
 

@@ -12,6 +12,8 @@ import { ProgressBar } from '../components/ui/ProgressBar';
 import { ErrorState, LoadingState } from '../components/ui/States';
 import { ConnectionPill } from '../components/ui/ConnectionPill';
 import { RulesSection } from '../components/RulesSection';
+import { WaitingForRoundCard } from '../components/WaitingForRoundCard';
+import { isPendingRound } from '../utils/roundState';
 import { cn } from '../utils/cn';
 
 export function OverviewPage({ navigate }: { navigate: (route: AppRoute) => void }): JSX.Element {
@@ -64,6 +66,9 @@ export function OverviewPage({ navigate }: { navigate: (route: AppRoute) => void
             <GameSummaryCard key={game.gameType} game={game} locale={locale} navigate={navigate} />
           ))}
         </div>
+        {overview.data !== null && overview.data.games.length === 0 ? (
+          <WaitingForRoundCard onRefresh={overview.refresh} />
+        ) : null}
       </section>
 
       <div className="grid gap-3 md:grid-cols-2">
@@ -108,7 +113,7 @@ function GameSummaryCard({
   const { t } = useI18n();
   const isBall = game.gameType === 'BALL';
   const route: AppRoute = isBall ? 'ball' : '100k';
-  const current = game.current;
+  const current = game.current !== null && !isPendingRound(game.current) ? game.current : null;
 
   return (
     <section className="glass glass-interactive flex flex-col p-4 sm:p-5">
@@ -176,7 +181,7 @@ function GameSummaryCard({
           </div>
         </>
       ) : (
-        <div className="glass-tile px-4 py-6 text-sm text-secondary">{t('overview.noCurrentRound')}</div>
+        <WaitingForRoundCard gameLabel={isBall ? 'BALL' : '100K'} compact />
       )}
     </section>
   );

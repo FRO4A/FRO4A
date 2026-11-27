@@ -1,4 +1,10 @@
 import type { Cell } from '@ton/core';
+import { assertActiveNetworkReady, type NetworkName } from '../config/deployments';
+import {
+  ACTIVE_NETWORK,
+  assertSigningAllowed,
+  getConnectedTonChain,
+} from './networkGuard';
 import {
   assertTrustedDrawAddress,
   type DrawAddressReader,
@@ -32,19 +38,36 @@ export interface GuardedDrawTarget extends DrawTarget {
   signal?: AbortSignal;
 }
 
+/** Optional explicit network context (production defaults to the cached wallet chain). */
+export interface NetworkGuardContext {
+  chain?: string | number | null;
+  network?: NetworkName;
+}
+
 /**
  * Single place where UI actions become wallet transactions. The connected
  * wallet signs locally; nothing about the buyer is sent to the FRO4A backend.
  *
- * The optional `drawTarget` makes the on-chain verification mandatory for every
- * buy / claim / refund / admin flow that touches a draw contract.
+ * Guards run BEFORE the wallet prompt:
+ *   1. TON Connect chain guard — a Testnet wallet can never sign for a Mainnet
+ *      app (and vice versa), blocking Buy / Claim / Refund / ForceStartGame /
+ *      Launch Round in both games.
+ *   2. The optional `drawTarget` verifies the canonical on-chain draw address
+ *      against the immutable factory.
  */
 export async function sendTransaction(
   sender: TransactionSender,
   messages: TransactionMessage[],
   drawTarget?: GuardedDrawTarget,
+  networkContext: NetworkGuardContext = {},
 ): Promise<{ boc: string }> {
   if (messages.length === 0) throw new Error('No messages to send');
+  // Fail closed before ANY wallet prompt when the Mainnet manifest is incomplete.
+  assertActiveNetworkReady();
+  assertSigningAllowed(
+    networkContext.chain !== undefined ? networkContext.chain : getConnectedTonChain(),
+    networkContext.network ?? ACTIVE_NETWORK,
+  );
   if (drawTarget !== undefined) {
     await assertTrustedDrawAddress(
       {

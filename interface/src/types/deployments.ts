@@ -8,8 +8,13 @@ export interface PricingManifest {
 
 export interface Deployments {
   network: 'testnet' | 'mainnet';
-  /** Manifest version (`v4` for Ticket100kPack + BALL Soulbound contracts). */
+  /** Manifest version (`v5` for the BallTicket / Ticket100kPack build). */
   version?: string;
+  /**
+   * Canonical public addresses. On an undeployed Mainnet these are `''` and the
+   * UI refuses to build any factory / draw transaction (fail-closed).
+   * Round-1 addresses are `''` until the Admin launches the first round.
+   */
   adminAddress: string;
   treasuryAddress: string;
   vrfPublicKey: string;
@@ -17,10 +22,9 @@ export interface Deployments {
   ballDrawRound1: string;
   draw100kFactory: string;
   draw100kRound1: string;
-  /** BALL V4 batch contract parameters (protocol-standard §7.1). */
+  /** BALL V5 batch contract parameters (protocol-standard §7.1). */
   ball?: {
     tallyDuration: number;
-    nftBaseUrl: string;
     maxBatchSize: number;
     batchBaseGas: string;
     mintValue: string;

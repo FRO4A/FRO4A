@@ -604,19 +604,7 @@ export function initializeRuntimeConfig(): Promise<string> {
   return initialization;
 }
 
-/** Synchronous value for image URLs; returns the configured fallback before init. */
+/** Synchronous value for API URLs; returns the configured fallback before init. */
 export function getApiBaseUrl(): string {
   return activeApiBaseUrl ?? sanitizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL) ?? API_BASE_URL;
-}
-
-/**
- * Resolve a server-relative asset path (`/api/nft/...`) against the active API.
- * Same-origin deployments keep the original relative path.
- */
-export function resolveApiAssetUrl(path: string | null | undefined): string {
-  if (typeof path !== 'string' || path.length === 0) return '';
-  if (/^https?:\/\//i.test(path)) return path;
-  const base = getApiBaseUrl();
-  if (base.length === 0) return path;
-  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
 }

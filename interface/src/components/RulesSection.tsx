@@ -135,8 +135,12 @@ export function RulesSection({ games = [] }: { games?: readonly LiveGameSnapshot
           <p className="mt-2 text-[11px] leading-4 text-[var(--text-muted)]">{t('common.anonymously')}</p>
 
           <div className="mt-3 grid gap-2">
-            <ContractRow label={t('info.ballFactory')} address={ACTIVE_DEPLOYMENTS.ballFactory} />
-            <ContractRow label={t('info.hundredFactory')} address={ACTIVE_DEPLOYMENTS.draw100kFactory} />
+            {ACTIVE_DEPLOYMENTS.ballFactory ? (
+              <ContractRow label={t('info.ballFactory')} address={ACTIVE_DEPLOYMENTS.ballFactory} />
+            ) : null}
+            {ACTIVE_DEPLOYMENTS.draw100kFactory ? (
+              <ContractRow label={t('info.hundredFactory')} address={ACTIVE_DEPLOYMENTS.draw100kFactory} />
+            ) : null}
             {drawRows.map((row) => (
               <ContractRow
                 key={row.key}
@@ -144,12 +148,18 @@ export function RulesSection({ games = [] }: { games?: readonly LiveGameSnapshot
                 address={row.drawAddress}
               />
             ))}
-            <ContractRow label={t('info.adminLabel')} address={ACTIVE_DEPLOYMENTS.adminAddress} />
-            <ContractRow label={t('info.treasuryLabel')} address={ACTIVE_DEPLOYMENTS.treasuryAddress} />
-            <div className="glass-nested p-3">
-              <div className="stat-label mb-1">{t('info.vrfKeyLabel')}</div>
-              <div className="code break-all text-xs text-[var(--text-primary)]">{ACTIVE_DEPLOYMENTS.vrfPublicKey}</div>
-            </div>
+            {ACTIVE_DEPLOYMENTS.adminAddress ? (
+              <ContractRow label={t('info.adminLabel')} address={ACTIVE_DEPLOYMENTS.adminAddress} />
+            ) : null}
+            {ACTIVE_DEPLOYMENTS.treasuryAddress ? (
+              <ContractRow label={t('info.treasuryLabel')} address={ACTIVE_DEPLOYMENTS.treasuryAddress} />
+            ) : null}
+            {ACTIVE_DEPLOYMENTS.vrfPublicKey ? (
+              <div className="glass-nested p-3">
+                <div className="stat-label mb-1">{t('info.vrfKeyLabel')}</div>
+                <div className="code break-all text-xs text-[var(--text-primary)]">{ACTIVE_DEPLOYMENTS.vrfPublicKey}</div>
+              </div>
+            ) : null}
           </div>
           <p className="mt-2 text-[11px] text-[var(--text-muted)]">{t('info.copyHint')}</p>
         </section>

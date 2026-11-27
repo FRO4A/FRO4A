@@ -67,20 +67,24 @@ export function buildDrawContractRows(
   }
   if (live.length > 0) return live;
 
-  return [
-    {
+  const rows: DrawContractRow[] = [];
+  if (deployments.ballDrawRound1.trim().length > 0) {
+    rows.push({
       key: 'manifest-ball-round-1',
       gameType: 'BALL',
       roundId: 1,
       drawAddress: deployments.ballDrawRound1,
       source: 'manifest',
-    },
-    {
+    });
+  }
+  if (deployments.draw100kRound1.trim().length > 0) {
+    rows.push({
       key: 'manifest-100k-round-1',
       gameType: '100K',
       roundId: 1,
       drawAddress: deployments.draw100kRound1,
       source: 'manifest',
-    },
-  ];
+    });
+  }
+  return rows;
 }

@@ -66,7 +66,12 @@ export interface DrawBaseView {
   gameType: 'BALL' | '100K';
   game: GameSlug;
   roundId: number;
+  /** `null` at runtime for the zero-round `pending/waiting` payload. */
   drawAddress: string;
+  /** Zero-round startup: the Admin has not launched Round #1 yet (HTTP 200). */
+  pending?: boolean;
+  /** Explicit alias of `pending` used by the UI waiting state. */
+  waiting?: boolean;
   adminAddress: string | null;
   treasuryAddress: string | null;
   status: number;
@@ -286,27 +291,40 @@ export interface ChainTicketView {
   gameType: 'BALL' | '100K';
   roundId: number;
   drawAddress: string;
-  ownerAddress: string;
+  /** Public wallet that owns this on-chain ticket (canonical form). */
+  owner: string;
+  /** Legacy alias of `owner` kept for older mirrors. */
+  ownerAddress?: string | null;
   ticketKey: string;
   displayValue: string;
+  /** V5 on-chain packed BALL combination (decimal string), `null` for 100K. */
   packedCombination: string | null;
-  whiteBalls: number[] | null;
-  redBall: number | null;
+  /** Exact on-chain `[white1..white5]` (ascending 1..69). */
+  whites: number[] | null;
+  /** Exact on-chain red ball (1..26). */
+  red: number | null;
+  /** Legacy aliases used by older mirrors. */
+  whiteBalls?: number[] | null;
+  redBall?: number | null;
   ticketNumber: number | null;
   status: number;
   statusLabel: string;
   drawStatus: number;
   drawStatusLabel: string;
   result: ChainTicketResult;
+  /** Winning tier (BALL category 1..8) when the ticket won, else null. */
+  tier?: number | null;
   matchedWhites: number[];
   redMatched: boolean | null;
   lt: string;
   category: number | null;
   place: number | null;
   isWinner: boolean;
+  /** V5 on-chain `TicketData.tallied`. */
+  tallied?: boolean;
+  /** V5 on-chain `TicketData.claimed`. */
+  claimed?: boolean;
   payout: AmountView | null;
-  /** Exact BALL TEP-64 `image` path served by the backend (NFT preview). */
-  nftImageUrl: string | null;
   tonviewerUrl: string;
 }
 
@@ -351,7 +369,7 @@ export interface ChainTicketsResponse {
   address: string;
   rawAddress: string;
   network: string;
-  /** BALL Soulbound tickets (one per combination). */
+  /** BALL V5 `BallTicket` receipts (one per combination, no token layer). */
   tickets: ChainTicketView[];
   /** 100K V4 packs (one row per range, every ticket number expanded). */
   packs: ChainPackView[];

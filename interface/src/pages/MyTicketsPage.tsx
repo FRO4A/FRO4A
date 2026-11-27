@@ -6,6 +6,7 @@ import { useI18n } from '../i18n';
 import { useWalletTickets } from '../hooks/useWalletTickets';
 import { buildClaim, buildPackAction, buildRefund } from '../services/messages';
 import { BLOCKED_TRANSACTION_MESSAGE, DrawAddressSecurityError } from '../services/drawTrust';
+import { WrongTonNetworkError } from '../services/networkGuard';
 import { sendTransaction } from '../services/tonConnect';
 import { GAS } from '../services/opcodes';
 import { isActiveTicketView, isPastTicketView } from '../utils/ticket';
@@ -103,7 +104,7 @@ function TicketsWorkspace(): JSX.Element {
     const key = `${ticket.ticketAddress}:${action}`;
     setPendingAction(key);
     // 100K V4: ONE `Ticket100kPack` claim/refund (0x3011 / 0x3012) for the whole
-    // range; BALL stays per-Soulbound-ticket (0x3008 / 0x3009).
+    // range; BALL stays per-`BallTicket` (0x3008 / 0x3009).
     const isPack = ticket.gameType === '100K' && ticket.pack !== undefined && ticket.pack !== null;
     const amount = isPack
       ? action === 'claim'
@@ -134,7 +135,9 @@ function TicketsWorkspace(): JSX.Element {
       window.setTimeout(() => setPendingAction(null), 6000);
     } catch (error) {
       setActionError(
-        error instanceof DrawAddressSecurityError ? BLOCKED_TRANSACTION_MESSAGE : t('errors.rejected'),
+        error instanceof DrawAddressSecurityError || error instanceof WrongTonNetworkError
+          ? BLOCKED_TRANSACTION_MESSAGE
+          : t('errors.rejected'),
       );
       setPendingAction(null);
     }

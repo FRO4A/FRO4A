@@ -20,7 +20,12 @@ import {
   buildRetryRollover,
 } from '../services/messages';
 import { sendTransaction } from '../services/tonConnect';
-import { BLOCKED_TRANSACTION_MESSAGE, DrawAddressSecurityError } from '../services/drawTrust';
+import {
+  assertCanonicalFactoryTarget,
+  BLOCKED_TRANSACTION_MESSAGE,
+  DrawAddressSecurityError,
+} from '../services/drawTrust';
+import { WrongTonNetworkError } from '../services/networkGuard';
 import { parseTonToNano } from '../utils/format';
 import { sameAddress } from '../utils/address';
 import { Modal } from './ui/Modal';
@@ -77,6 +82,8 @@ export function AdminPanel({
 
   const feeNano = useMemo(() => parseTonToNano(sweepTon), [sweepTon]);
   const sweepValid = feeNano !== null && feeNano > 0n;
+  // V5: a new round can only be launched when no round is open/selling.
+  const roundOpen = draw.status <= 1;
 
   const open = (key: ActionKey): void => {
     setResult(null);
@@ -171,6 +178,8 @@ export function AdminPanel({
       const drawTarget = sameAddress(pending.target, draw.drawAddress)
         ? { gameType, roundId: draw.roundId, drawAddress: draw.drawAddress }
         : undefined;
+      // Admin factory call: only the pinned canonical factory is allowed.
+      if (drawTarget === undefined) assertCanonicalFactoryTarget(gameType, pending.target);
       await sendTransaction(
         tonConnectUI,
         [{ address: pending.target, amount: pending.amount.toString(), payload: pending.body }],
@@ -182,7 +191,9 @@ export function AdminPanel({
       window.setTimeout(onDone, 5000);
     } catch (error) {
       setResult('error');
-      setBlocked(error instanceof DrawAddressSecurityError);
+      setBlocked(
+        error instanceof DrawAddressSecurityError || error instanceof WrongTonNetworkError,
+      );
     } finally {
       setSending(false);
     }
@@ -245,15 +256,17 @@ export function AdminPanel({
             {t('admin.forceStart')}
           </button>
         )}
-        <button
-          type="button"
-          className="btn btn-secondary justify-start"
-          onClick={() => open('createRound')}
-          disabled={nextRound.data === null}
-        >
-          <Sparkles size={17} strokeWidth={1.75} />
-          {t('admin.createRound')}
-        </button>
+        {roundOpen ? null : (
+          <button
+            type="button"
+            className="btn btn-secondary justify-start"
+            onClick={() => open('createRound')}
+            disabled={nextRound.data === null}
+          >
+            <Sparkles size={17} strokeWidth={1.75} />
+            {t('admin.createRound')}
+          </button>
+        )}
         <button type="button" className="btn btn-secondary justify-start" onClick={() => open('checkDeadline')}>
           <TimerReset size={17} strokeWidth={1.75} />
           {t('admin.checkDeadline')}

@@ -75,10 +75,6 @@ async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
         credentials: 'omit',
         headers: {
           accept: 'application/json',
-          // ngrok's free plan injects an HTML interstitial for browser User-Agents.
-          // This documented bypass header keeps /api responses as real JSON when
-          // the app is served through the single ngrok HTTPS tunnel.
-          'ngrok-skip-browser-warning': '1',
         },
       });
       if (!response.ok) {

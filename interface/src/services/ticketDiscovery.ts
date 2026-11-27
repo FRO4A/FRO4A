@@ -7,32 +7,31 @@ import {
   fetchAccountTransactions,
   fetchTrace,
   stackCell,
-  type TonApiNftItem,
   type TonApiTraceNode,
   type TonApiTransaction,
 } from './tonapi';
 
 /**
- * Deterministic, 100% client-side ticket discovery.
+ * Deterministic, 100% client-side ticket discovery (V5).
  *
  * WHY THIS EXISTS
  * ---------------
- * The deployed SBT child contracts do not expose the TEP-62 collection getters
- * (`get_collection_data` / `get_nft_address_by_index`), and `Ticket100kSBT.get_nft_data`
- * omits the content cell, so TonAPI never indexes these tickets as NFTs and
- * `/accounts/{wallet}/nfts` is empty. This module therefore rebuilds the wallet's
- * ticket list from raw public chain history:
+ * V5 removed the whole token layer. A BALL ticket is a plain, non-transferable
+ * `BallTicket` receipt whose address is fully deterministic:
+ *     contractAddress(initOf BallTicket(drawAddress, packedCombination))
+ * and a 100K purchase mints ONE `Ticket100kPack` for the whole range. There is no
+ * token collection to enumerate, so the fallback rebuilds the wallet's ticket
+ * list from raw public chain history:
  *
  *   1. For every known draw, compute the wallet's deterministic UserQuota shard
- *      address from the compiled quota code (`userQuotaAddress`). This value was
- *      verified against the live Testnet quota shards.
+ *      address from the compiled quota code (`userQuotaAddress`).
  *   2. Walk the draw's public transactions. The `QuotaGranted` transaction is the
  *      only transaction whose `in_msg.source` is that quota shard, and its single
- *      mint out-message points at the deterministic SBT:
+ *      mint out-message points at the deterministic ticket / pack:
  *         BALL  : out op 0x1004 (MintTicket)
- *         100K  : out op 0x4001 (TicketMinted)
+ *         100K  : out op 0x4001 (TicketMinted / PackMinted)
  *   3. Every candidate is then verified with the live ticket getter, including the
- *      owner check, so a duplicate purchase (mint attempt against an SBT owned by
+ *      owner check, so a duplicate purchase (mint attempt against a ticket owned by
  *      somebody else) is rejected instead of being shown.
  *
  * Fallback: if a draw's history is not reachable, the wallet's own `BuyTicket`
@@ -43,8 +42,8 @@ import {
 
 export const BUY_TICKET_OPCODE = 0x1001;
 
-/** draw -> SBT mint opcode (BALL `MintTicket`, 100K `TicketMinted`). */
-export const SBT_MINT_OPCODE: Record<GameType, number> = {
+/** draw -> ticket mint opcode (BALL `MintTicket`, 100K `PackMinted`). */
+export const TICKET_MINT_OPCODE: Record<GameType, number> = {
   BALL: 0x1004,
   '100K': 0x4001,
 };
@@ -56,7 +55,7 @@ export interface TicketCandidate {
   ticketAddress: string;
   draw: KnownDraw;
   /** How the address was found (useful for diagnostics / the UI note). */
-  source: 'nft' | 'quota-transactions' | 'trace' | 'wallet-payload';
+  source: 'quota-transactions' | 'trace' | 'wallet-payload';
 }
 
 /** Parses `"0x00001001"` / `"4097"` / `4097` into a number. */
@@ -82,7 +81,7 @@ function pushUnique(target: string[], value: string, seen: Set<string>): void {
 }
 
 /**
- * Extracts SBT addresses from the draw's transactions:
+ * Extracts ticket / pack addresses from the draw's transactions:
  * only transactions sent by the wallet's deterministic quota shard are considered,
  * and only their mint out-message destination is returned.
  */
@@ -91,7 +90,7 @@ export function parseMintDestinations(
   transactions: readonly TonApiTransaction[],
   quotaAddress: string,
 ): string[] {
-  const mintOpcode = SBT_MINT_OPCODE[gameType];
+  const mintOpcode = TICKET_MINT_OPCODE[gameType];
   const found: string[] = [];
   const seen = new Set<string>();
   for (const transaction of transactions) {
@@ -113,7 +112,7 @@ export function parseTraceMintDestinations(
   root: TonApiTraceNode,
   limit = 64,
 ): string[] {
-  const mintOpcode = SBT_MINT_OPCODE[gameType];
+  const mintOpcode = TICKET_MINT_OPCODE[gameType];
   const found: string[] = [];
   const seen = new Set<string>();
   const queue: TonApiTraceNode[] = [root];
@@ -159,26 +158,6 @@ export function parseBuyTicketCalls(
   return calls;
 }
 
-/** NFT list entries whose collection is one of our known draws. */
-export function matchNftCandidates(
-  nfts: readonly TonApiNftItem[],
-  draws: readonly KnownDraw[],
-): TicketCandidate[] {
-  const candidates: TicketCandidate[] = [];
-  const seen = new Set<string>();
-  for (const nft of nfts) {
-    const collection = nft.collection?.address;
-    if (typeof collection !== 'string' || typeof nft.address !== 'string') continue;
-    const draw = draws.find((candidate) => sameAddress(candidate.drawAddress, collection));
-    if (!draw) continue;
-    const key = addressKey(nft.address) ?? nft.address;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    candidates.push({ ticketAddress: nft.address, draw, source: 'nft' });
-  }
-  return candidates;
-}
-
 async function collectDrawTransactions(
   drawAddress: string,
   signal?: AbortSignal,
@@ -198,7 +177,7 @@ async function collectDrawTransactions(
 
 /**
  * The primary deterministic discovery path: draw history + deterministic quota shard.
- * Each known draw costs 1–4 public TonAPI calls, independent of the number of tickets.
+ * Each known draw costs 1вЂ“4 public TonAPI calls, independent of the number of tickets.
  */
 export async function discoverTicketsFromQuotaShards(
   wallet: string,
@@ -334,8 +313,8 @@ export function parseBallBuyPayloads(
 }
 
 /**
- * BALL fast path: one small wallet-history call -> local SBT address derivation.
- * Works even when the NFT index, the draw history or the traces are unavailable.
+ * BALL fast path: one small wallet-history call -> local BallTicket address derivation.
+ * Works even when the draw history or the traces are unavailable.
  */
 export async function discoverBallTicketsFromWallet(
   wallet: string,
