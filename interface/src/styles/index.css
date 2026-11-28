@@ -167,6 +167,16 @@ body {
   transition: color 240ms ease;
 }
 
+/* Viewport clamping guard: a `fixed` popover (wallet menu) must never widen the
+   document, otherwise a Telegram Mini App page can slide sideways when a menu
+   opens. `clip` — unlike `hidden` — creates no scroll container, so the sticky
+   header and the floating dock keep working exactly as before. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
 ::selection {
   background: var(--accent-soft);
 }
@@ -265,6 +275,13 @@ body {
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
   border-radius: 1.25rem;
+}
+
+/* Wallet popover actions can never widen the viewport-clamped card: long
+   translated labels stay inside the panel (wrapping, then ellipsizing). */
+.wallet-popover .btn {
+  white-space: normal;
+  max-width: 100%;
 }
 
 .glass-dock {
